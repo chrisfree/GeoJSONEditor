@@ -19,17 +19,46 @@ import UniformTypeIdentifiers
 // MARK: - Data Models
 enum TrackFeatureType: String {
     case circuit = "circuit"
-    case sector = "sector"
+    case sectorOne = "sector1"
+    case sectorTwo = "sector2"
+    case sectorThree = "sector3"
     case drsZone = "drs"
+
+    static func fromFeature(_ feature: GeoJSONFeature) -> TrackFeatureType {
+        if let id = feature.properties["id"]?.stringValue {
+            switch id {
+            case "sector1":
+                return .sectorOne
+            case "sector2":
+                return .sectorTwo
+            case "sector3":
+                return .sectorThree
+            case _ where id.contains("be-"):
+                return .circuit
+            default:
+                // If it's not a sector, check if it's a circuit by looking at other properties
+                if feature.properties["Location"] != nil ||
+                   feature.properties["length"] != nil {
+                    return .circuit
+                }
+                return .drsZone
+            }
+        }
+        return .circuit // Default to circuit if no id found
+    }
 
     var color: NSColor {
         switch self {
         case .circuit:
-            return .systemBlue
-        case .sector:
-            return .systemGreen
-        case .drsZone:
             return .systemPurple
+        case .sectorOne:
+            return .systemRed
+        case .sectorTwo:
+            return .systemTeal
+        case .sectorThree:
+            return .systemYellow
+        case .drsZone:
+            return .systemGreen
         }
     }
 }
@@ -57,13 +86,6 @@ struct GeoJSONFeature: Identifiable, Codable {
         properties = try container.decode([String: PropertyValue].self, forKey: .properties)
         geometry = try container.decode(GeoJSONGeometry.self, forKey: .geometry)
         id = UUID()
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(type, forKey: .type)
-        try container.encode(properties, forKey: .properties)
-        try container.encode(geometry, forKey: .geometry)
     }
 }
 
@@ -181,6 +203,45 @@ struct EditingState {
     }
 }
 
+extension CLLocationCoordinate2D: Equatable {
+    public static func == (lhs: CLLocationCoordinate2D, rhs: CLLocationCoordinate2D) -> Bool {
+        // Use a smaller epsilon for more precise matching
+        let epsilon: CLLocationDegrees = 0.0000001
+        return abs(lhs.latitude - rhs.latitude) < epsilon &&
+               abs(lhs.longitude - rhs.longitude) < epsilon
+    }
+}
+
+// Add helpful extensions for coordinate comparison
+extension MKPolyline {
+    func coordinates() -> [CLLocationCoordinate2D] {
+        var coords: [CLLocationCoordinate2D] = []
+        let points = self.points()
+        for i in 0..<self.pointCount {
+            coords.append(points[i].coordinate)
+        }
+        return coords
+    }
+
+    func approximatelyEquals(_ other: [CLLocationCoordinate2D]) -> Bool {
+        let coords = self.coordinates()
+        guard coords.count == other.count else { return false }
+
+        // Compare a few sample points to save performance while still being accurate
+        let sampleSize = min(5, coords.count)
+        let strideLength = max(1, coords.count / sampleSize)
+        var index = 0
+
+        while index < coords.count {
+            if coords[index] != other[index] {
+                return false
+            }
+            index += strideLength
+        }
+        return true
+    }
+}
+
 class EditablePoint: NSObject, MKOverlay {
     let coordinate: CLLocationCoordinate2D
     let index: Int
@@ -262,10 +323,12 @@ struct F1GeoJSONEditor: View {
                     if !editingState.isEnabled {
                         Picker("Feature Type", selection: $selectedFeatureType) {
                             Text("Circuit").tag(TrackFeatureType.circuit)
-                            Text("Sector").tag(TrackFeatureType.sector)
+                            Text("Sector 1").tag(TrackFeatureType.sectorOne)
+                            Text("Sector 2").tag(TrackFeatureType.sectorTwo)
+                            Text("Sector 3").tag(TrackFeatureType.sectorThree)
                             Text("DRS Zone").tag(TrackFeatureType.drsZone)
                         }
-                        .pickerStyle(.segmented)
+                        .pickerStyle(.automatic)
 
                         HStack {
                             Button("New") {
@@ -433,16 +496,24 @@ struct F1GeoJSONEditor: View {
         selectedFeatures.removeAll()
     }
 
+    // Then in F1GeoJSONEditor, update the recenterMap function:
     private func recenterMap() {
-        guard !visibleFeatures.isEmpty else { return }
+        print("\n=== RECENTER MAP CALLED ===")
+        guard !layers.isEmpty else {
+            print("No layers found, exiting recenterMap")
+            return
+        }
+
+        print("Processing \(layers.count) layers for centering")
 
         var minLat = Double.infinity
         var maxLat = -Double.infinity
         var minLon = Double.infinity
         var maxLon = -Double.infinity
 
-        for feature in visibleFeatures {
-            for coordinate in feature.geometry.coordinates {
+        // Calculate bounds
+        for layer in layers {
+            for coordinate in layer.feature.geometry.coordinates {
                 let lon = coordinate[0]
                 let lat = coordinate[1]
                 minLat = min(minLat, lat)
@@ -452,18 +523,29 @@ struct F1GeoJSONEditor: View {
             }
         }
 
-        let center = CLLocationCoordinate2D(
+        let latPadding = (maxLat - minLat) * 0.2
+        let lonPadding = (maxLon - minLon) * 0.2
+
+        let newCenter = CLLocationCoordinate2D(
             latitude: (minLat + maxLat) / 2,
             longitude: (minLon + maxLon) / 2
         )
 
-        let span = MKCoordinateSpan(
-            latitudeDelta: (maxLat - minLat) * 1.5,
-            longitudeDelta: (maxLon - minLon) * 1.5
+        let newSpan = MKCoordinateSpan(
+            latitudeDelta: (maxLat - minLat) + latPadding,
+            longitudeDelta: (maxLon - minLon) + lonPadding
         )
 
-        withAnimation {
-            mapRegion = MKCoordinateRegion(center: center, span: span)
+        print("Setting new region - Center: (\(newCenter.latitude), \(newCenter.longitude)), Span: (\(newSpan.latitudeDelta), \(newSpan.longitudeDelta))")
+
+        // Force the update on the main thread
+        DispatchQueue.main.async {
+            // Create a completely new region instance
+            let newRegion = MKCoordinateRegion(
+                center: newCenter,
+                span: newSpan
+            )
+            self.mapRegion = newRegion
         }
     }
 
@@ -515,32 +597,45 @@ struct F1GeoJSONEditor: View {
     }
 
     private func importGeoJSON() {
+        print("\n=== IMPORT GEOJSON STARTED ===")
+
         let openPanel = NSOpenPanel()
         openPanel.allowedContentTypes = [UTType(filenameExtension: "geojson")!]
         openPanel.allowsMultipleSelection = false
 
         openPanel.begin { response in
+            print("Open panel completed with response: \(response == .OK ? "OK" : "Cancel")")
+
             if response == .OK, let url = openPanel.url {
+                print("Selected file: \(url.lastPathComponent)")
+
                 do {
                     let data = try Data(contentsOf: url)
+                    print("File data loaded, size: \(data.count) bytes")
+
                     let decoder = JSONDecoder()
                     let featureCollection = try decoder.decode(GeoJSONFeatureCollection.self, from: data)
-                    layers = featureCollection.features.map { LayerState(feature: $0) }
-
-                    // Store the imported URL for later use
-                    lastImportedURL = url
-
-                    print("Loaded \(layers.count) features")
+                    print("Successfully decoded feature collection with \(featureCollection.features.count) features")
 
                     DispatchQueue.main.async {
-                        recenterMap()
-                        alertMessage = "Successfully loaded \(layers.count) features"
-                        showingAlert = true
+                        print("\nUpdating layers on main thread...")
+                        self.layers = featureCollection.features.map { LayerState(feature: $0) }
+                        print("Created \(self.layers.count) layer states")
+
+                        print("\nCalling recenterMap...")
+                        self.recenterMap()
+                        print("recenterMap called")
+
+                        self.lastImportedURL = url
+                        self.alertMessage = "Successfully loaded \(self.layers.count) features"
+                        self.showingAlert = true
                     }
                 } catch {
                     print("Error loading GeoJSON: \(error)")
-                    alertMessage = "Error loading file: \(error.localizedDescription)"
-                    showingAlert = true
+                    DispatchQueue.main.async {
+                        self.alertMessage = "Error loading file: \(error.localizedDescription)"
+                        self.showingAlert = true
+                    }
                 }
             }
         }
@@ -589,6 +684,86 @@ struct MapViewWrapper: NSViewRepresentable {
     let onPointSelected: (CLLocationCoordinate2D) -> Void
     let onPointMoved: (Int, CLLocationCoordinate2D) -> Void
 
+    func makeNSView(context: Context) -> MKMapView {
+        let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        context.coordinator.mapView = mapView
+
+        mapView.region = region
+        mapView.isZoomEnabled = true
+        mapView.isPitchEnabled = true
+        mapView.isRotateEnabled = true
+        mapView.isScrollEnabled = true
+
+        let dragGesture = NSPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDrag(_:)))
+        mapView.addGestureRecognizer(dragGesture)
+
+        let clickGesture = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleClick(_:)))
+        mapView.addGestureRecognizer(clickGesture)
+
+        return mapView
+    }
+
+    func updateNSView(_ mapView: MKMapView, context: Context) {
+        // Only update region if:
+        // 1. We're not in edit mode
+        // 2. We're not dragging a point
+        // 3. The region has actually changed
+        if !editingState.isEnabled &&
+           context.coordinator.draggedPointIndex == nil {
+            let currentRegion = mapView.region
+            if currentRegion.center.latitude != region.center.latitude ||
+               currentRegion.center.longitude != region.center.longitude ||
+               currentRegion.span.latitudeDelta != region.span.latitudeDelta ||
+               currentRegion.span.longitudeDelta != region.span.longitudeDelta {
+                mapView.setRegion(region, animated: false)
+            }
+        }
+
+        // Rest of overlay updates only if not dragging
+        if context.coordinator.draggedPointIndex == nil {
+            mapView.removeOverlays(mapView.overlays)
+            context.coordinator.pointOverlays.removeAll()
+            context.coordinator.polylineToFeature.removeAll()
+
+            // Update the currentEditingFeature when in edit mode
+            if editingState.isEnabled, let editingId = editingState.selectedFeatureId {
+                context.coordinator.currentEditingFeature = features.first { $0.id == editingId }
+            } else {
+                context.coordinator.currentEditingFeature = nil
+            }
+
+            for feature in features {
+                let coordinates = feature.geometry.coordinates.map {
+                    CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
+                }
+
+                let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+
+                if editingState.isEnabled && feature.id == editingState.selectedFeatureId {
+                    context.coordinator.mainPolyline = polyline
+                    mapView.addOverlay(polyline, level: .aboveRoads)
+
+                    context.coordinator.currentCoordinates = coordinates
+
+                    for (index, coordinate) in coordinates.enumerated() {
+                        let point = EditablePoint(coordinate: coordinate, index: index)
+                        context.coordinator.pointOverlays.append(point)
+                        mapView.addOverlay(point, level: .aboveLabels)
+                    }
+                } else {
+                    context.coordinator.polylineToFeature[polyline] = feature
+                    mapView.addOverlay(polyline, level: .aboveRoads)
+                }
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    // Coordinator class implementation...
     class Coordinator: NSObject, MKMapViewDelegate {
         var parent: MapViewWrapper
         var draggedPointIndex: Int?
@@ -598,36 +773,41 @@ struct MapViewWrapper: NSViewRepresentable {
         var pointOverlays: [EditablePoint] = []
         var currentCoordinates: [CLLocationCoordinate2D] = []
         var lastUpdateTime: TimeInterval = 0
-        var backgroundFeaturePolylines: [MKPolyline] = []
+        var polylineToFeature: [MKPolyline: GeoJSONFeature] = [:]
         var debounceTimer: Timer?
-        let updateInterval: TimeInterval = 1.0 / 60.0  // 60 FPS cap
+        let updateInterval: TimeInterval = 1.0 / 60.0
 
         init(_ parent: MapViewWrapper) {
             self.parent = parent
             super.init()
         }
 
+        @objc func handleClick(_ gesture: NSClickGestureRecognizer) {
+            guard parent.isDrawing,
+                  let mapView = gesture.view as? MKMapView else {
+                return
+            }
+
+            let location = gesture.location(in: mapView)
+            let coordinate = mapView.convert(location, toCoordinateFrom: mapView)
+            parent.onPointSelected(coordinate)
+        }
+
         private func updatePolylineCoordinates(_ newCoordinate: CLLocationCoordinate2D, at index: Int) {
             guard let mapView = self.mapView else { return }
 
-            // Check if enough time has passed since last update
             let currentTime = CACurrentMediaTime()
             guard (currentTime - lastUpdateTime) >= updateInterval else { return }
             lastUpdateTime = currentTime
 
-            // Update coordinates
             currentCoordinates[index] = newCoordinate
 
-            // Cancel existing timer
             debounceTimer?.invalidate()
-
-            // Create new timer for parent update
             debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
                 guard let self = self else { return }
                 self.parent.onPointMoved(index, newCoordinate)
             }
 
-            // Only update the editing polyline
             if let oldPolyline = mainPolyline {
                 mapView.removeOverlay(oldPolyline)
             }
@@ -635,14 +815,8 @@ struct MapViewWrapper: NSViewRepresentable {
             let newPolyline = MKPolyline(coordinates: currentCoordinates, count: currentCoordinates.count)
             mainPolyline = newPolyline
 
-            // Add the new polyline above the background features
-            if let lastBackground = backgroundFeaturePolylines.last {
-                mapView.insertOverlay(newPolyline, above: lastBackground)
-            } else {
-                mapView.addOverlay(newPolyline, level: .aboveRoads)
-            }
+            mapView.addOverlay(newPolyline, level: .aboveRoads)
 
-            // Update just the dragged point
             if let point = pointOverlays[safe: index] {
                 mapView.removeOverlay(point)
                 let newPoint = EditablePoint(coordinate: newCoordinate, index: index)
@@ -654,20 +828,20 @@ struct MapViewWrapper: NSViewRepresentable {
         private func setupBackgroundFeatures() {
             guard let mapView = self.mapView else { return }
 
-            // Clear existing background features
-            for polyline in backgroundFeaturePolylines {
+            // Clear existing features
+            for (polyline, _) in polylineToFeature {
                 mapView.removeOverlay(polyline)
             }
-            backgroundFeaturePolylines.removeAll()
+            polylineToFeature.removeAll()
 
-            // Add non-editing features as background
+            // Add non-editing features
             let backgroundFeatures = parent.features.filter { $0.id != parent.editingState.selectedFeatureId }
             for feature in backgroundFeatures {
                 let coordinates = feature.geometry.coordinates.map {
                     CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
                 }
                 let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-                backgroundFeaturePolylines.append(polyline)
+                polylineToFeature[polyline] = feature
                 mapView.addOverlay(polyline, level: .aboveRoads)
             }
         }
@@ -683,49 +857,46 @@ struct MapViewWrapper: NSViewRepresentable {
 
             switch gesture.state {
             case .began:
-                if let feature = currentEditingFeature {
-                    if currentCoordinates.isEmpty {
-                        currentCoordinates = feature.geometry.coordinates.map {
-                            CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
-                        }
-                        setupBackgroundFeatures()
-                    }
+                if currentCoordinates.isEmpty {
+                    currentCoordinates = currentEditingFeature?.geometry.coordinates.map {
+                        CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
+                    } ?? []
+                    setupBackgroundFeatures()
+                }
 
-                    let pointsWithIndices = currentCoordinates.enumerated().map { ($0, $1) }
-                    let closestPoint = pointsWithIndices.min { point1, point2 in
-                        let point1Screen = mapView.convert(point1.1, toPointTo: mapView)
-                        let point2Screen = mapView.convert(point2.1, toPointTo: mapView)
-                        let distance1 = hypot(location.x - point1Screen.x, location.y - point1Screen.y)
-                        let distance2 = hypot(location.x - point2Screen.x, location.y - point2Screen.y)
-                        return distance1 < distance2
-                    }
+                let pointsWithIndices = currentCoordinates.enumerated().map { ($0, $1) }
+                if let closest = pointsWithIndices.min(by: { point1, point2 in
+                    let point1Screen = mapView.convert(point1.1, toPointTo: mapView)
+                    let point2Screen = mapView.convert(point2.1, toPointTo: mapView)
+                    let distance1 = hypot(location.x - point1Screen.x, location.y - point1Screen.y)
+                    let distance2 = hypot(location.x - point2Screen.x, location.y - point2Screen.y)
+                    return distance1 < distance2
+                }) {
+                    let screenPoint = mapView.convert(closest.1, toPointTo: mapView)
+                    let distance = hypot(location.x - screenPoint.x, location.y - screenPoint.y)
 
-                    if let closest = closestPoint {
-                        let screenPoint = mapView.convert(closest.1, toPointTo: mapView)
-                        let distance = hypot(location.x - screenPoint.x, location.y - screenPoint.y)
-
-                        if distance <= 20 {
-                            draggedPointIndex = closest.0
-                            mapView.isScrollEnabled = false
-                        }
+                    if distance <= 20 {
+                        print("Starting drag on point \(closest.0)")
+                        draggedPointIndex = closest.0
+                        mapView.isScrollEnabled = false
                     }
                 }
 
             case .changed:
                 if let index = draggedPointIndex {
+                    print("Dragging point \(index) to \(coordinate)")
                     updatePolylineCoordinates(coordinate, at: index)
                 }
 
             case .ended, .cancelled:
+                if let index = draggedPointIndex {
+                    print("Finished dragging point \(index)")
+                    parent.onPointMoved(index, coordinate)
+                }
                 draggedPointIndex = nil
                 mapView.isScrollEnabled = true
                 debounceTimer?.invalidate()
                 debounceTimer = nil
-
-                // Final update without debounce
-                if let index = draggedPointIndex {
-                    parent.onPointMoved(index, coordinate)
-                }
 
             default:
                 break
@@ -742,74 +913,24 @@ struct MapViewWrapper: NSViewRepresentable {
                 return renderer
             } else if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
-                renderer.strokeColor = polyline === mainPolyline ? .blue : .blue.withAlphaComponent(0.3)
-                renderer.lineWidth = polyline === mainPolyline ? 3 : 2
+
+                if polyline === mainPolyline {
+                    renderer.strokeColor = .systemBlue
+                } else if let feature = polylineToFeature[polyline] {
+                    // Use the feature type's color
+                    renderer.strokeColor = TrackFeatureType.fromFeature(feature).color
+                } else {
+                    renderer.strokeColor = .systemGray
+                }
+
+                renderer.lineWidth = 5
                 return renderer
             }
 
             return MKOverlayRenderer(overlay: overlay)
         }
     }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    func makeNSView(context: Context) -> MKMapView {
-        let mapView = MKMapView()
-        mapView.delegate = context.coordinator
-        context.coordinator.mapView = mapView
-
-        mapView.region = region
-        mapView.isZoomEnabled = true
-        mapView.isPitchEnabled = true
-        mapView.isRotateEnabled = true
-        mapView.isScrollEnabled = true
-
-        let dragGesture = NSPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleDrag(_:)))
-        mapView.addGestureRecognizer(dragGesture)
-
-        return mapView
-    }
-
-    func updateNSView(_ mapView: MKMapView, context: Context) {
-        // Only update if we're not dragging
-        if context.coordinator.draggedPointIndex == nil {
-            mapView.removeOverlays(mapView.overlays)
-            context.coordinator.pointOverlays.removeAll()
-            context.coordinator.backgroundFeaturePolylines.removeAll()
-
-            let displayedFeatures = editingState.isEnabled
-                ? features.filter { $0.id == editingState.selectedFeatureId }
-                : features
-
-            if editingState.isEnabled, let editingFeature = displayedFeatures.first {
-                context.coordinator.currentEditingFeature = editingFeature
-            } else {
-                context.coordinator.currentEditingFeature = nil
-            }
-
-            for feature in displayedFeatures {
-                let coordinates = feature.geometry.coordinates.map {
-                    CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
-                }
-
-                let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-                context.coordinator.mainPolyline = polyline
-                mapView.addOverlay(polyline, level: .aboveRoads)
-
-                if editingState.isEnabled && feature.id == editingState.selectedFeatureId {
-                    for (index, coordinate) in coordinates.enumerated() {
-                        let point = EditablePoint(coordinate: coordinate, index: index)
-                        context.coordinator.pointOverlays.append(point)
-                        mapView.addOverlay(point, level: .aboveLabels)
-                    }
-                }
-            }
-        }
-    }
 }
-
 extension Array {
     subscript(safe index: Index) -> Element? {
         return indices.contains(index) ? self[index] : nil
@@ -824,3 +945,13 @@ extension CGPoint {
         return sqrt(dx * dx + dy * dy)
     }
 }
+
+extension MKCoordinateRegion: Equatable {
+    public static func == (lhs: MKCoordinateRegion, rhs: MKCoordinateRegion) -> Bool {
+        return lhs.center.latitude == rhs.center.latitude &&
+               lhs.center.longitude == rhs.center.longitude &&
+               lhs.span.latitudeDelta == rhs.span.latitudeDelta &&
+               lhs.span.longitudeDelta == rhs.span.longitudeDelta
+    }
+}
+
