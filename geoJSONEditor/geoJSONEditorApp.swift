@@ -25,7 +25,7 @@ struct geoJSONEditorApp: App {
 
     var body: some Scene {
         WindowGroup {
-            F1GeoJSONEditor()
+            ContentView()
         }
         .modelContainer(sharedModelContainer)
     }

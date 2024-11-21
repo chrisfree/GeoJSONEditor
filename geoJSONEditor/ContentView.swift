@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MapKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var selectedFeatures: Set<UUID> = []
@@ -30,67 +31,14 @@ struct ContentView: View {
     var body: some View {
         HSplitView {
             // Left sidebar with feature list
-            VStack {
-                List(selection: $selectedFeatures) {
-                    ForEach(layers) { layer in
-                        HStack {
-                            Toggle(isOn: binding(for: layer)) {
-                                Text(layer.feature.properties["name"]?.stringValue ??
-                                     layer.feature.properties["Name"]?.stringValue ??
-                                     "Unnamed Feature")
-                            }
-                            .toggleStyle(CheckboxToggleStyle())
-
-                            if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
-                                Text("Editing")
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                    }
-                }
-                .onChange(of: selectedFeatures) { newSelection in
-                    if editingState.isEnabled, let selected = newSelection.first {
-                        editingState.selectedFeatureId = selected
-                        // Update visibility
-                        for i in 0..<layers.count {
-                            layers[i].isVisible = layers[i].feature.id == selected
-                        }
-                    }
-                }
-
-                Divider()
-
-                // Controls
-                VStack(spacing: 10) {
-                    if !editingState.isEnabled {
-                        Picker("Feature Type", selection: $selectedFeatureType) {
-                            Text("Circuit").tag(TrackFeatureType.circuit)
-                            Text("Sector 1").tag(TrackFeatureType.sectorOne)
-                            Text("Sector 2").tag(TrackFeatureType.sectorTwo)
-                            Text("Sector 3").tag(TrackFeatureType.sectorThree)
-                            Text("DRS Zone").tag(TrackFeatureType.drsZone)
-                        }
-                        .pickerStyle(.automatic)
-
-                        HStack {
-                            Button("New") {
-                                startNewFeature()
-                            }
-
-                            Button("Finish Drawing") {
-                                finishDrawing()
-                            }
-                            .disabled(!isDrawing)
-
-                            Button("Delete") {
-                                deleteSelectedFeatures()
-                            }
-                            .disabled(selectedFeatures.isEmpty)
-                        }
-                    }
-                }
-                .padding()
-            }
+            FeatureSidebarView(
+                selectedFeatures: $selectedFeatures,
+                layers: $layers,
+                editingState: $editingState,
+                selectedFeatureType: $selectedFeatureType,
+                isDrawing: $isDrawing,
+                currentPoints: $currentPoints
+            )
             .frame(minWidth: 200, maxWidth: 300)
 
             // Main map view
@@ -129,6 +77,7 @@ struct ContentView: View {
             }
         }
     }
+
 
     private func handlePointMoved(index: Int, newCoordinate: CLLocationCoordinate2D) {
         guard let selectedId = editingState.selectedFeatureId,
@@ -413,5 +362,417 @@ struct ContentView: View {
 
         editingState.selectedFeatureId = nil
         editingState.modifiedCoordinates = nil
+    }
+}
+
+struct FeatureSidebarView: View {
+    @Binding var selectedFeatures: Set<UUID>
+    @Binding var layers: [LayerState]
+    @Binding var editingState: EditingState
+    @Binding var selectedFeatureType: TrackFeatureType
+    @Binding var isDrawing: Bool
+    @Binding var currentPoints: [[Double]]
+
+    var body: some View {
+        VStack {
+            FeatureListView(
+                selectedFeatures: $selectedFeatures,
+                layers: $layers,
+                editingState: $editingState
+            )
+
+            Divider()
+
+            ControlsView(
+                editingState: $editingState,
+                selectedFeatureType: $selectedFeatureType,
+                isDrawing: $isDrawing,
+                currentPoints: $currentPoints,
+                layers: $layers,
+                selectedFeatures: $selectedFeatures
+            )
+        }
+    }
+}
+
+// MARK: - Feature List View
+struct FeatureListView: View {
+    @Binding var selectedFeatures: Set<UUID>
+    @Binding var layers: [LayerState]
+    @Binding var editingState: EditingState  // Changed to @Binding
+
+    var body: some View {
+        List(selection: $selectedFeatures) {
+            ForEach(layers) { layer in
+                FeatureRowView(layer: layer,
+                               layers: $layers,
+                               editingState: $editingState)  // Pass binding
+            }
+        }
+        .onChange(of: selectedFeatures) { newSelection in
+            handleSelectionChange(newSelection)
+        }
+    }
+
+    private func handleSelectionChange(_ newSelection: Set<UUID>) {
+        if editingState.isEnabled, let selected = newSelection.first {
+            editingState.selectedFeatureId = selected
+            updateLayerVisibility(for: selected)
+        }
+    }
+
+    private func updateLayerVisibility(for selectedId: UUID) {
+        for i in 0..<layers.count {
+            layers[i].isVisible = layers[i].feature.id == selectedId
+        }
+    }
+}
+
+// MARK: - Feature Row View
+struct FeatureRowView: View {
+    let layer: LayerState
+    @Binding var layers: [LayerState]
+    @Binding var editingState: EditingState
+    @State private var isEditingName: Bool = false
+    @State private var editedName: String = ""
+    @State private var showingDeleteAlert: Bool = false
+
+    var body: some View {
+        HStack {
+            VisibilityButton(layer: layer, layers: $layers)
+
+            if isEditingName {
+                TextField("Feature Name",
+                          text: $editedName,
+                          onCommit: {
+                    updateFeatureName(editedName)
+                    isEditingName = false
+                })
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+            } else {
+                Text(layer.feature.properties["name"]?.stringValue ??
+                     layer.feature.properties["Name"]?.stringValue ??
+                     "Unnamed Feature")
+            }
+
+            Spacer()
+
+            if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
+                Text("Editing")
+                    .foregroundColor(.blue)
+            }
+
+            Group {
+                // Edit Button
+                Button(action: {
+                    toggleEditMode()
+                }) {
+                    Image(systemName: "pencil")
+                        .imageScale(.small)
+                }
+                .buttonStyle(HoverButtonStyle(isEditing: editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id))
+                .help(editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id
+                      ? "Exit Edit Mode"
+                      : "Edit Feature")
+
+                // Duplicate Button
+                Button(action: {
+                    duplicateFeature()
+                }) {
+                    Image(systemName: "plus.square.on.square")
+                        .imageScale(.small)
+                }
+                .buttonStyle(HoverButtonStyle())
+                .help("Duplicate Feature")
+
+                // Delete Button
+                Button(action: {
+                    showingDeleteAlert = true
+                }) {
+                    Image(systemName: "trash")
+                        .imageScale(.small)
+                }
+                .buttonStyle(HoverDeleteButtonStyle())
+                .help("Delete Feature")
+            }
+        }
+        .padding(.vertical, 2)
+        .alert(isPresented: $showingDeleteAlert) {
+            Alert(
+                title: Text("Delete Feature"),
+                message: Text("Are you sure you want to delete this feature? This action cannot be undone."),
+                primaryButton: .destructive(Text("Delete")) {
+                    deleteFeature()
+                },
+                secondaryButton: .cancel()
+            )
+        }
+    }
+
+    private func deleteFeature() {
+        // If we're deleting the feature being edited, exit edit mode
+        if editingState.isEnabled && editingState.selectedFeatureId == layer.id {
+            editingState.isEnabled = false
+            editingState.selectedFeatureId = nil
+            editingState.modifiedCoordinates = nil
+        }
+
+        // Remove the layer
+        layers.removeAll { $0.id == layer.id }
+
+        // After deletion, make all remaining layers visible
+        for i in 0..<layers.count {
+            layers[i].isVisible = true
+        }
+    }
+
+    private func duplicateFeature() {
+        // Get the current name of the feature
+        let currentName = layer.feature.properties["name"]?.stringValue ??
+        layer.feature.properties["Name"]?.stringValue ??
+        "Unnamed Feature"
+
+        // Create a copy of the feature
+        var duplicatedFeature = layer.feature
+
+        // Generate a new UUID
+        duplicatedFeature.id = UUID()
+
+        // Update properties with new name
+        var newProperties = duplicatedFeature.properties
+        newProperties["name"] = .string("\(currentName) copy")
+        duplicatedFeature.properties = newProperties
+
+        // Create a new LayerState with the duplicated feature
+        var newLayer = LayerState(feature: duplicatedFeature)
+
+        // Add the new layer to the layers array
+        layers.append(newLayer)
+
+        // Set up name editing for the new feature
+        editedName = "\(currentName) copy"
+        isEditingName = true
+
+        // Select and enter edit mode for the new feature
+        editingState.isEnabled = true
+        editingState.selectedFeatureId = duplicatedFeature.id
+
+        // Update visibility
+        for i in 0..<layers.count {
+            layers[i].isVisible = (layers[i].feature.id == duplicatedFeature.id)
+        }
+    }
+
+    private func updateFeatureName(_ newName: String) {
+        if let index = layers.firstIndex(where: { $0.id == layer.id }) {
+            var updatedFeature = layers[index].feature
+            var properties = updatedFeature.properties
+            properties["name"] = .string(newName)
+            updatedFeature.properties = properties
+            layers[index].feature = updatedFeature
+        }
+    }
+
+    private func toggleEditMode() {
+        if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
+            // Exiting edit mode
+            editingState.isEnabled = false
+            editingState.selectedFeatureId = nil
+            editingState.modifiedCoordinates = nil
+
+            // Restore all layers visibility
+            for i in 0..<layers.count {
+                layers[i].isVisible = true
+            }
+        } else {
+            // Entering edit mode
+            editingState.isEnabled = true
+            editingState.selectedFeatureId = layer.feature.id
+
+            // Hide all layers except the selected one
+            for i in 0..<layers.count {
+                layers[i].isVisible = (layers[i].feature.id == layer.feature.id)
+            }
+        }
+    }
+}
+
+// MARK: - Custom Button Styles
+struct HoverButtonStyle: ButtonStyle {
+    var isEditing: Bool = false
+
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(
+                isEditing ? NSColor.systemBlue.asColor :
+                    isHovering ? NSColor.labelColor.asColor :
+                    NSColor.secondaryLabelColor.asColor
+            )
+            .onHover { hovering in
+                isHovering = hovering
+            }
+    }
+}
+
+struct HoverDeleteButtonStyle: ButtonStyle {
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(
+                isHovering ? NSColor.systemRed.asColor :
+                    NSColor.secondaryLabelColor.asColor
+            )
+            .onHover { hovering in
+                isHovering = hovering
+            }
+    }
+}
+
+// MARK: - Visibility Button
+struct VisibilityButton: View {
+    let layer: LayerState
+    @Binding var layers: [LayerState]
+    @State private var isHovering = false
+
+    private var isVisible: Binding<Bool> {
+        Binding(
+            get: { layer.isVisible },
+            set: { newValue in
+                if let index = layers.firstIndex(where: { $0.id == layer.id }) {
+                    layers[index].isVisible = newValue
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        Button(action: {
+            isVisible.wrappedValue.toggle()
+        }) {
+            Image(systemName: isVisible.wrappedValue ? "eye" : "eye.slash")
+                .imageScale(.small)
+                .foregroundColor(
+                    isVisible.wrappedValue ?
+                        NSColor.labelColor.asColor :
+                        isHovering ?
+                            NSColor.labelColor.asColor :
+                            NSColor.secondaryLabelColor.asColor
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
+        .help(isVisible.wrappedValue ? "Hide" : "Show")
+    }
+}
+
+extension NSColor {
+    var asColor: Color {
+        Color(self)
+    }
+}
+
+// MARK: - Controls View
+struct ControlsView: View {
+    @Binding var editingState: EditingState
+    @Binding var selectedFeatureType: TrackFeatureType
+    @Binding var isDrawing: Bool
+    @Binding var currentPoints: [[Double]]
+    @Binding var layers: [LayerState]
+    @Binding var selectedFeatures: Set<UUID>
+
+    var body: some View {
+        VStack(spacing: 10) {
+            if !editingState.isEnabled {
+                FeatureTypePicker(selectedFeatureType: $selectedFeatureType)
+                DrawingControls(
+                    isDrawing: $isDrawing,
+                    currentPoints: $currentPoints,
+                    layers: $layers,
+                    selectedFeatures: $selectedFeatures,
+                    selectedFeatureType: selectedFeatureType
+                )
+            }
+        }
+        .padding()
+    }
+}
+
+// MARK: - Feature Type Picker
+struct FeatureTypePicker: View {
+    @Binding var selectedFeatureType: TrackFeatureType
+
+    var body: some View {
+        Picker("Feature Type", selection: $selectedFeatureType) {
+            Text("Circuit").tag(TrackFeatureType.circuit)
+            Text("Sector 1").tag(TrackFeatureType.sectorOne)
+            Text("Sector 2").tag(TrackFeatureType.sectorTwo)
+            Text("Sector 3").tag(TrackFeatureType.sectorThree)
+            Text("DRS Zone").tag(TrackFeatureType.drsZone)
+        }
+        .pickerStyle(.automatic)
+    }
+}
+
+// MARK: - Drawing Controls
+struct DrawingControls: View {
+    @Binding var isDrawing: Bool
+    @Binding var currentPoints: [[Double]]
+    @Binding var layers: [LayerState]
+    @Binding var selectedFeatures: Set<UUID>
+    let selectedFeatureType: TrackFeatureType
+
+    var body: some View {
+        HStack {
+            Button("New") {
+                startNewFeature()
+            }
+
+            Button("Finish Drawing") {
+                finishDrawing()
+            }
+            .disabled(!isDrawing)
+
+            Button("Delete") {
+                deleteSelectedFeatures()
+            }
+            .disabled(selectedFeatures.isEmpty)
+        }
+    }
+
+    private func startNewFeature() {
+        isDrawing = true
+        currentPoints = []
+    }
+
+    private func finishDrawing() {
+        guard currentPoints.count >= 2 else { return }
+
+        let properties: [String: PropertyValue] = [
+            "id": .string("\(selectedFeatureType.rawValue)-\(UUID().uuidString)"),
+            "name": .string("New \(selectedFeatureType.rawValue.capitalized)")
+        ]
+
+        let newFeature = GeoJSONFeature(
+            type: "Feature",
+            properties: properties,
+            geometry: GeoJSONGeometry(
+                type: "LineString",
+                coordinates: currentPoints
+            )
+        )
+
+        layers.append(LayerState(feature: newFeature))
+        currentPoints = []
+        isDrawing = false
+    }
+
+    private func deleteSelectedFeatures() {
+        layers.removeAll { selectedFeatures.contains($0.id) }
+        selectedFeatures.removeAll()
     }
 }
