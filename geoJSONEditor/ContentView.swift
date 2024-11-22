@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var alertMessage = ""
     @State private var editingState = EditingState()
     @State private var lastImportedURL: URL?
+    @State private var shouldForceMapUpdate: Bool = false
 
     var visibleFeatures: [GeoJSONFeature] {
         layers.filter(\.isVisible).map(\.feature)
@@ -39,7 +40,7 @@ struct ContentView: View {
                 isDrawing: $isDrawing,
                 currentPoints: $currentPoints
             )
-            .frame(minWidth: 200, maxWidth: 300)
+            .frame(minWidth: 200, idealWidth: 200, maxWidth: 350)
 
             // Main map view
             ZStack {
@@ -50,11 +51,31 @@ struct ContentView: View {
                     currentPoints: $currentPoints,
                     region: $mapRegion,
                     editingState: $editingState,
+                    shouldForceUpdate: $shouldForceMapUpdate,  // Pass as binding
                     onPointSelected: handlePointSelection,
                     onPointMoved: { index, newCoordinate in
                         handlePointMoved(index: index, newCoordinate: newCoordinate)
                     }
                 )
+
+                // Recenter button overlay
+
+
+                Button(action: recenterMap) {
+                    Image(systemName: "scope")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(12)
+                        .background(.thinMaterial)
+                        .clipShape(Circle())
+                        .shadow(radius: 2)
+
+                }
+                .buttonStyle(PlainButtonStyle())
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding([.trailing, .bottom], 16)
+                .help("Recenter Map")
             }
         }
         .alert(isPresented: $showingAlert) {
@@ -190,53 +211,70 @@ struct ContentView: View {
     // Then in F1GeoJSONEditor, update the recenterMap function:
     private func recenterMap() {
         print("\n=== RECENTER MAP CALLED ===")
-        guard !layers.isEmpty else {
-            print("No layers found, exiting recenterMap")
+
+        // Don't recenter if currently dragging a point
+        guard !editingState.isDraggingPoint else {
+            print("Skipping recenter due to active point drag")
             return
         }
 
-        print("Processing \(layers.count) layers for centering")
-
-        var minLat = Double.infinity
-        var maxLat = -Double.infinity
-        var minLon = Double.infinity
-        var maxLon = -Double.infinity
+        // Only consider visible layers with coordinates
+        let visibleLayers = layers.filter { $0.isVisible && !$0.feature.geometry.coordinates.isEmpty }
+        guard !visibleLayers.isEmpty else {
+            print("No visible layers with coordinates found")
+            return
+        }
 
         // Calculate bounds
-        for layer in layers {
+        var bounds = MapBounds()
+        for layer in visibleLayers {
             for coordinate in layer.feature.geometry.coordinates {
-                let lon = coordinate[0]
-                let lat = coordinate[1]
-                minLat = min(minLat, lat)
-                maxLat = max(maxLat, lat)
-                minLon = min(minLon, lon)
-                maxLon = max(maxLon, lon)
+                guard coordinate.count >= 2,
+                      coordinate[1].isFinite && coordinate[0].isFinite else { continue }
+
+                bounds.extend(lat: coordinate[1], lon: coordinate[0])
             }
         }
 
-        let latPadding = (maxLat - minLat) * 0.2
-        let lonPadding = (maxLon - minLon) * 0.2
+        guard bounds.isValid else {
+            print("No valid coordinates found for centering")
+            return
+        }
 
-        let newCenter = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLon + maxLon) / 2
+        // Add padding to the bounds
+        let latPadding = (bounds.maxLat - bounds.minLat) * 0.1
+        let lonPadding = (bounds.maxLon - bounds.minLon) * 0.1
+
+        let paddedBounds = MapBounds(
+            minLat: bounds.minLat - latPadding,
+            maxLat: bounds.maxLat + latPadding,
+            minLon: bounds.minLon - lonPadding,
+            maxLon: bounds.maxLon + lonPadding
         )
 
-        let newSpan = MKCoordinateSpan(
-            latitudeDelta: (maxLat - minLat) + latPadding,
-            longitudeDelta: (maxLon - minLon) + lonPadding
-        )
+        // Calculate center point
+        let centerLat = paddedBounds.center.lat
+        let centerLon = paddedBounds.center.lon
 
-        print("Setting new region - Center: (\(newCenter.latitude), \(newCenter.longitude)), Span: (\(newSpan.latitudeDelta), \(newSpan.longitudeDelta))")
+        // Calculate span
+        let latSpan = max(paddedBounds.maxLat - paddedBounds.minLat, 0.001)
+        let lonSpan = max(paddedBounds.maxLon - paddedBounds.minLon, 0.001)
 
-        // Force the update on the main thread
+        print("Calculated bounds: \(bounds)")
+        print("Center: (\(centerLat), \(centerLon)), Span: (\(latSpan), \(lonSpan))")
+
+        // Force immediate update on main thread
         DispatchQueue.main.async {
-            // Create a completely new region instance
             let newRegion = MKCoordinateRegion(
-                center: newCenter,
-                span: newSpan
+                center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
+                span: MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)
             )
+
+            // Set a flag to force update
+            self.shouldForceMapUpdate = true
             self.mapRegion = newRegion
+
+            print("Map region updated to: center(\(newRegion.center.latitude), \(newRegion.center.longitude)), span(\(newRegion.span.latitudeDelta), \(newRegion.span.longitudeDelta))")
         }
     }
 

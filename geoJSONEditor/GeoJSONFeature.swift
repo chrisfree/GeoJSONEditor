@@ -197,10 +197,7 @@ struct EditingState {
     var isEnabled: Bool = false
     var selectedFeatureId: UUID?
     var modifiedCoordinates: [[Double]]?
-
-    var isEditing: Bool {
-        isEnabled && selectedFeatureId != nil
-    }
+    var isDraggingPoint: Bool = false  // Add this line
 }
 
 extension CLLocationCoordinate2D: Equatable {
@@ -209,6 +206,43 @@ extension CLLocationCoordinate2D: Equatable {
         let epsilon: CLLocationDegrees = 0.0000001
         return abs(lhs.latitude - rhs.latitude) < epsilon &&
                abs(lhs.longitude - rhs.longitude) < epsilon
+    }
+}
+
+struct MapBounds {
+    var minLat: Double
+    var maxLat: Double
+    var minLon: Double
+    var maxLon: Double
+
+    init() {
+        minLat = Double.infinity
+        maxLat = -Double.infinity
+        minLon = Double.infinity
+        maxLon = -Double.infinity
+    }
+
+    init(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double) {
+        self.minLat = minLat
+        self.maxLat = maxLat
+        self.minLon = minLon
+        self.maxLon = maxLon
+    }
+
+    var isValid: Bool {
+        minLat != Double.infinity && maxLat != -Double.infinity &&
+        minLon != Double.infinity && maxLon != -Double.infinity
+    }
+
+    var center: (lat: Double, lon: Double) {
+        ((minLat + maxLat) / 2, (minLon + maxLon) / 2)
+    }
+
+    mutating func extend(lat: Double, lon: Double) {
+        minLat = min(minLat, lat)
+        maxLat = max(maxLat, lat)
+        minLon = min(minLon, lon)
+        maxLon = max(maxLon, lon)
     }
 }
 
@@ -275,6 +309,7 @@ struct MapViewWrapper: NSViewRepresentable {
     @Binding var currentPoints: [[Double]]
     @Binding var region: MKCoordinateRegion
     @Binding var editingState: EditingState
+    @Binding var shouldForceUpdate: Bool  // Change to binding
     let onPointSelected: (CLLocationCoordinate2D) -> Void
     let onPointMoved: (Int, CLLocationCoordinate2D) -> Void
 
@@ -299,6 +334,28 @@ struct MapViewWrapper: NSViewRepresentable {
     }
 
     func updateNSView(_ mapView: MKMapView, context: Context) {
+        // If forcing update or conditions are met, update the region
+        if shouldForceUpdate ||
+            (!editingState.isEnabled && context.coordinator.draggedPointIndex == nil) {
+            
+            let currentRegion = mapView.region
+            if currentRegion.center.latitude != region.center.latitude ||
+                currentRegion.center.longitude != region.center.longitude ||
+                currentRegion.span.latitudeDelta != region.span.latitudeDelta ||
+                currentRegion.span.longitudeDelta != region.span.longitudeDelta {
+                
+                print("Updating map region...")
+                mapView.setRegion(region, animated: true)
+                
+                // Reset the force update flag after applying the update
+                if shouldForceUpdate {
+                    DispatchQueue.main.async {
+                        self.shouldForceUpdate = false
+                    }
+                }
+            }
+        }
+
         // Only update region if:
         // 1. We're not in edit mode
         // 2. We're not dragging a point
@@ -440,6 +497,24 @@ struct MapViewWrapper: NSViewRepresentable {
             }
         }
 
+        private func findClosestPoint(to location: CGPoint, in mapView: MKMapView) -> (Int, CLLocationCoordinate2D)? {
+            let pointsWithIndices = currentCoordinates.enumerated().map { ($0, $1) }
+            let closest = pointsWithIndices.min(by: { point1, point2 in
+                let point1Screen = mapView.convert(point1.1, toPointTo: mapView)
+                let point2Screen = mapView.convert(point2.1, toPointTo: mapView)
+                let distance1 = hypot(location.x - point1Screen.x, location.y - point1Screen.y)
+                let distance2 = hypot(location.x - point2Screen.x, location.y - point2Screen.y)
+                return distance1 < distance2
+            })
+
+            if let closest = closest {
+                let screenPoint = mapView.convert(closest.1, toPointTo: mapView)
+                let distance = hypot(location.x - screenPoint.x, location.y - screenPoint.y)
+                return distance <= 20 ? closest : nil
+            }
+            return nil
+        }
+        
         @objc func handleDrag(_ gesture: NSPanGestureRecognizer) {
             guard parent.editingState.isEnabled,
                   let mapView = gesture.view as? MKMapView else {
@@ -451,43 +526,25 @@ struct MapViewWrapper: NSViewRepresentable {
 
             switch gesture.state {
             case .began:
-                if currentCoordinates.isEmpty {
-                    currentCoordinates = currentEditingFeature?.geometry.coordinates.map {
-                        CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
-                    } ?? []
-                    setupBackgroundFeatures()
-                }
-
-                let pointsWithIndices = currentCoordinates.enumerated().map { ($0, $1) }
-                if let closest = pointsWithIndices.min(by: { point1, point2 in
-                    let point1Screen = mapView.convert(point1.1, toPointTo: mapView)
-                    let point2Screen = mapView.convert(point2.1, toPointTo: mapView)
-                    let distance1 = hypot(location.x - point1Screen.x, location.y - point1Screen.y)
-                    let distance2 = hypot(location.x - point2Screen.x, location.y - point2Screen.y)
-                    return distance1 < distance2
-                }) {
-                    let screenPoint = mapView.convert(closest.1, toPointTo: mapView)
-                    let distance = hypot(location.x - screenPoint.x, location.y - screenPoint.y)
-
-                    if distance <= 20 {
-                        print("Starting drag on point \(closest.0)")
-                        draggedPointIndex = closest.0
-                        mapView.isScrollEnabled = false
-                    }
+                // Update drag state when starting drag
+                if let closest = findClosestPoint(to: location, in: mapView) {
+                    draggedPointIndex = closest.0
+                    parent.editingState.isDraggingPoint = true
+                    mapView.isScrollEnabled = false
                 }
 
             case .changed:
-                if let index = draggedPointIndex {
-                    print("Dragging point \(index) to \(coordinate)")
-                    updatePolylineCoordinates(coordinate, at: index)
+                if draggedPointIndex != nil {
+                    updatePolylineCoordinates(coordinate, at: draggedPointIndex!)
                 }
 
             case .ended, .cancelled:
                 if let index = draggedPointIndex {
-                    print("Finished dragging point \(index)")
                     parent.onPointMoved(index, coordinate)
                 }
+                // Clear drag state
                 draggedPointIndex = nil
+                parent.editingState.isDraggingPoint = false
                 mapView.isScrollEnabled = true
                 debounceTimer?.invalidate()
                 debounceTimer = nil
@@ -525,6 +582,7 @@ struct MapViewWrapper: NSViewRepresentable {
         }
     }
 }
+
 extension Array {
     subscript(safe index: Index) -> Element? {
         return indices.contains(index) ? self[index] : nil
