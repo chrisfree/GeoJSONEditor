@@ -13,6 +13,8 @@ struct FeaturePointsView: View {
     @Binding var editingState: EditingState
     @Binding var layers: [LayerState]
     @State private var isPointAnimating: Bool = false
+    @State private var selectedIndices: Set<Int> = []
+    @State private var lastSelectedIndex: Int? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -20,36 +22,108 @@ struct FeaturePointsView: View {
                 PointRowView(
                     index: index,
                     coordinate: coordinates[index],
-                    isSelected: editingState.selectedPointIndex == index,
-                    isAnimating: isPointAnimating && editingState.selectedPointIndex == index,
-                    onDoubleTap: { handlePointSelection(index) }
+                    isSelected: selectedIndices.contains(index),
+                    isAnimating: isPointAnimating && selectedIndices.contains(index)
                 )
+                .contentShape(Rectangle())
+                .gesture(
+                    TapGesture()
+                        .modifiers(.shift)
+                        .onEnded { _ in
+                            handleShiftClick(index)
+                        }
+                )
+                .simultaneousGesture(
+                    TapGesture()
+                        .onEnded { _ in
+                            if !NSEvent.modifierFlags.contains(.shift) {
+                                handleRegularClick(index)
+                            }
+                        }
+                )
+                .contextMenu {
+                    if !selectedIndices.isEmpty {
+                        Button("Duplicate Selection to New Layer") {
+                            duplicateSelectionToNewLayer()
+                        }
+                    }
+                }
             }
         }
         .padding(8)
-        .background(Color(NSColor.textBackgroundColor).opacity(0.5))
         .cornerRadius(6)
     }
 
-    private func handlePointSelection(_ index: Int) {
-        if editingState.isEnabled && editingState.selectedPointIndex == index {
-            exitEditMode()
-        } else {
+    private func handleRegularClick(_ index: Int) {
+        if !editingState.isEnabled {
             enterEditMode(forPoint: index)
+        } else {
+            selectedIndices = [index]
+            lastSelectedIndex = index
         }
+    }
+
+    private func handleShiftClick(_ index: Int) {
+        guard editingState.isEnabled, let last = lastSelectedIndex else {
+            handleRegularClick(index)
+            return
+        }
+
+        let range = min(last, index)...max(last, index)
+        selectedIndices.formUnion(range)
+    }
+
+    private func duplicateSelectionToNewLayer() {
+        guard !selectedIndices.isEmpty else { return }
+
+        // Find the current layer
+        guard let currentLayer = layers.first(where: { $0.id == layerId }) else { return }
+
+        // Create new coordinates array with only selected points
+        let selectedCoordinates = selectedIndices.sorted().compactMap { index in
+            coordinates[safe: index]
+        }
+
+        // Create new feature properties, copying the original but updating the name
+        var newProperties = currentLayer.feature.properties
+        newProperties["name"] = PropertyValue.string("Unnamed segment")
+
+        // Create new geometry with duplicated points
+        let newGeometry = GeoJSONGeometry(
+            type: currentLayer.feature.geometry.type,
+            coordinates: selectedCoordinates
+        )
+
+        // Create new feature with duplicated points
+        let newFeature = GeoJSONFeature(
+            type: currentLayer.feature.type,
+            properties: newProperties,
+            geometry: newGeometry
+        )
+
+        // Create new layer
+        let newLayer = LayerState(
+            feature: newFeature,
+            isVisible: true
+        )
+
+        // Add new layer to layers array
+        layers.append(newLayer)
+
+        // Switch selection to new layer
+        editingState.selectedFeatureId = newFeature.id
+        selectedIndices = Set(0..<selectedCoordinates.count)
+        lastSelectedIndex = selectedCoordinates.count - 1
     }
 
     private func enterEditMode(forPoint index: Int) {
         editingState.isEnabled = true
         editingState.selectedFeatureId = layerId
-        editingState.selectedPointIndex = index
+        selectedIndices = [index]
+        lastSelectedIndex = index
 
-        if let layerIndex = layers.firstIndex(where: { $0.feature.id == layerId }) {
+        if let layerIndex = layers.firstIndex(where: { $0.id == layerId }) {
             editingState.modifiedCoordinates = layers[layerIndex].feature.geometry.coordinates
-        }
-
-        for i in 0..<layers.count {
-            layers[i].isVisible = (layers[i].feature.id == layerId)
         }
 
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
@@ -64,49 +138,47 @@ struct FeaturePointsView: View {
     private func exitEditMode() {
         editingState.isEnabled = false
         editingState.selectedFeatureId = nil
-        editingState.selectedPointIndex = nil
         editingState.modifiedCoordinates = nil
-
-        for i in 0..<layers.count {
-            layers[i].isVisible = true
-        }
+        selectedIndices.removeAll()
+        lastSelectedIndex = nil
     }
 }
 
-
 struct PointRowView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let index: Int
     let coordinate: [Double]
     let isSelected: Bool
     let isAnimating: Bool
-    let onDoubleTap: () -> Void
 
     var body: some View {
         HStack {
+            Image(systemName: isSelected ? "circle.fill" : "circle")
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .font(.system(size: 5))
+                .padding(.trailing, 5)
+
             Text("Point \(index + 1)")
                 .foregroundStyle(isSelected ? .primary : .secondary)
 
             Spacer()
 
-            coordinateView
+            Text(formatCoordinate(coordinate))
+                .font(.caption)
+                .monospaced()
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .scaleEffect(isAnimating ? 1.1 : 1.0)
         }
         .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
-    }
-
-    private var coordinateView: some View {
-        Text(formatCoordinate(coordinate))
-            .font(.system(.caption, design: .monospaced))
-            .foregroundStyle(isSelected ? .primary : .secondary)
-            .scaleEffect(isAnimating ? 1.1 : 1.0)
-            .onTapGesture(count: 2) {
-                onDoubleTap()
-            }
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isSelected ? Color.accentColor.opacity(colorScheme == .dark ? 0.25 : 0.15) : .clear)
+        )
     }
 
     private func formatCoordinate(_ coordinate: [Double]) -> String {
         guard coordinate.count >= 2 else { return "Invalid" }
-        return String(format: "%.6f, %.6f", coordinate[1], coordinate[0])
+        return String(format: "[%.6f, %.6f]", coordinate[1], coordinate[0])
     }
 }

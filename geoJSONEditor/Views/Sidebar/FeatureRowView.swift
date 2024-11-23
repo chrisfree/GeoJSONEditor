@@ -14,95 +14,91 @@ struct FeatureRowView: View {
     @State private var isEditingName: Bool = false
     @State private var editedName: String = ""
     @State private var showingDeleteAlert: Bool = false
-    @State private var isShowingPoints: Bool = false  // New state for points visibility
+    @State private var isShowingPoints: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            // Main row with feature name and controls
-            HStack {
-                // Disclosure triangle for points
-                Button(action: {
-                    isShowingPoints.toggle()
-                }) {
-                    Image(systemName: isShowingPoints ? "arrowtriangle.down.fill" : "arrowtriangle.right.fill")
-                        .imageScale(.small)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .help(isShowingPoints ? "Hide Points" : "Show Points")
-
-                VisibilityButton(layer: layer, layers: $layers)
-
-                if isEditingName {
-                    TextField("Feature Name",
-                              text: $editedName,
-                              onCommit: {
-                        updateFeatureName(editedName)
-                        isEditingName = false
-                    })
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                } else {
-                    Text(layer.feature.properties["name"]?.stringValue ??
-                         layer.feature.properties["Name"]?.stringValue ??
-                         "Unnamed Feature")
-                }
-
-                Spacer()
-
-                if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
-                    Text("Editing")
-                        .foregroundColor(.primary)
-                }
-
-                Group {
-                    // Edit Button
-                    Button(action: {
-                        toggleEditMode()
-                    }) {
-                        Image(systemName: "pencil")
-                            .imageScale(.small)
-                    }
-                    .buttonStyle(HoverButtonStyle(isEditing: editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id))
-                    .help(editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id
-                          ? "Exit Edit Mode"
-                          : "Edit Feature")
-
-                    // Duplicate Button
-                    Button(action: {
-                        duplicateFeature()
-                    }) {
-                        Image(systemName: "plus.square.on.square")
-                            .imageScale(.small)
-                    }
-                    .buttonStyle(HoverButtonStyle())
-                    .help("Duplicate Feature")
-
-                    // Delete Button
-                    Button(action: {
-                        showingDeleteAlert = true
-                    }) {
-                        Image(systemName: "trash")
-                            .imageScale(.small)
-                    }
-                    .buttonStyle(HoverDeleteButtonStyle())
-                    .help("Delete Feature")
-                }
-            }
-            .padding(.vertical, 2)
-
-            // Points list (shown when expanded)
-            if isShowingPoints {
+        DisclosureGroup(
+            isExpanded: $isShowingPoints,
+            content: {
                 FeaturePointsView(
                     coordinates: layer.feature.geometry.coordinates,
                     layerId: layer.id,
                     editingState: $editingState,
                     layers: $layers
                 )
-                .padding(.leading, 28)
+                .selectionDisabled()
+            },
+            label: {
+                HStack {
+                    VisibilityButton(layer: layer, layers: $layers)
+
+                    if isEditingName {
+                        TextField("Feature Name",
+                                text: $editedName,
+                                onCommit: {
+                            updateFeatureName(editedName)
+                            isEditingName = false
+                        })
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .onExitCommand { // Handle escape key
+                            isEditingName = false
+                        }
+                    } else {
+                        Text(layer.feature.properties["name"]?.stringValue ??
+                             layer.feature.properties["Name"]?.stringValue ??
+                             "Unnamed Feature")
+                            .onTapGesture(count: 2) { // Handle double click/tap
+                                editedName = layer.feature.properties["name"]?.stringValue ??
+                                           layer.feature.properties["Name"]?.stringValue ??
+                                           "Unnamed Feature"
+                                isEditingName = true
+                            }
+                    }
+
+                    Spacer()
+
+                    if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
+                        Text("Editing")
+                            .foregroundColor(.primary)
+                    }
+
+                    Group {
+                        // Edit Button
+                        Button(action: {
+                            toggleEditMode()
+                        }) {
+                            Image(systemName: "pencil")
+                                .imageScale(.small)
+                        }
+                        .buttonStyle(HoverButtonStyle(isEditing: editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id))
+                        .help(editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id
+                              ? "Exit Edit Mode"
+                              : "Edit Feature")
+
+                        // Duplicate Button
+                        Button(action: {
+                            duplicateFeature()
+                        }) {
+                            Image(systemName: "plus.square.on.square")
+                                .imageScale(.small)
+                        }
+                        .buttonStyle(HoverButtonStyle())
+                        .help("Duplicate Feature")
+
+                        // Delete Button
+                        Button(action: {
+                            showingDeleteAlert = true
+                        }) {
+                            Image(systemName: "trash")
+                                .imageScale(.small)
+                        }
+                        .buttonStyle(HoverDeleteButtonStyle())
+                        .help("Delete Feature")
+                    }
+                }
+                .padding(.leading)
             }
-        }
-        .listRowBackground(Color(NSColor.alternatingContentBackgroundColors[1])) 
-        .listRowSeparator(.hidden)
+        )
         .alert(isPresented: $showingDeleteAlert) {
             Alert(
                 title: Text("Delete Feature"),
