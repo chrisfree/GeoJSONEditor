@@ -197,7 +197,8 @@ struct EditingState {
     var isEnabled: Bool = false
     var selectedFeatureId: UUID?
     var modifiedCoordinates: [[Double]]?
-    var isDraggingPoint: Bool = false  // Add this line
+    var isDraggingPoint: Bool = false
+    var selectedPointIndex: Int? // Add this to track selected point
 }
 
 extension CLLocationCoordinate2D: Equatable {
@@ -300,8 +301,6 @@ class EditablePoint: NSObject, MKOverlay {
 }
 
 // MARK: - Main View
-
-
 struct MapViewWrapper: NSViewRepresentable {
     let features: [GeoJSONFeature]
     let selectedFeatures: Set<UUID>
@@ -337,16 +336,16 @@ struct MapViewWrapper: NSViewRepresentable {
         // If forcing update or conditions are met, update the region
         if shouldForceUpdate ||
             (!editingState.isEnabled && context.coordinator.draggedPointIndex == nil) {
-            
+
             let currentRegion = mapView.region
             if currentRegion.center.latitude != region.center.latitude ||
                 currentRegion.center.longitude != region.center.longitude ||
                 currentRegion.span.latitudeDelta != region.span.latitudeDelta ||
                 currentRegion.span.longitudeDelta != region.span.longitudeDelta {
-                
+
                 print("Updating map region...")
                 mapView.setRegion(region, animated: true)
-                
+
                 // Reset the force update flag after applying the update
                 if shouldForceUpdate {
                     DispatchQueue.main.async {

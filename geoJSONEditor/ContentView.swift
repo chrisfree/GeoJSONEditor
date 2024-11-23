@@ -59,8 +59,6 @@ struct ContentView: View {
                 )
 
                 // Recenter button overlay
-
-
                 Button(action: recenterMap) {
                     Image(systemName: "scope")
                         .font(.system(size: 16, weight: .medium))
@@ -474,67 +472,93 @@ struct FeatureRowView: View {
     @State private var isEditingName: Bool = false
     @State private var editedName: String = ""
     @State private var showingDeleteAlert: Bool = false
+    @State private var isShowingPoints: Bool = false  // New state for points visibility
 
     var body: some View {
-        HStack {
-            VisibilityButton(layer: layer, layers: $layers)
+        VStack(alignment: .leading, spacing: 2) {
+            // Main row with feature name and controls
+            HStack {
+                // Disclosure triangle for points
+                Button(action: {
+                    isShowingPoints.toggle()
+                }) {
+                    Image(systemName: isShowingPoints ? "arrowtriangle.down.fill" : "arrowtriangle.right.fill")
+                        .imageScale(.small)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help(isShowingPoints ? "Hide Points" : "Show Points")
 
-            if isEditingName {
-                TextField("Feature Name",
-                          text: $editedName,
-                          onCommit: {
-                    updateFeatureName(editedName)
-                    isEditingName = false
-                })
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            } else {
-                Text(layer.feature.properties["name"]?.stringValue ??
-                     layer.feature.properties["Name"]?.stringValue ??
-                     "Unnamed Feature")
+                VisibilityButton(layer: layer, layers: $layers)
+
+                if isEditingName {
+                    TextField("Feature Name",
+                              text: $editedName,
+                              onCommit: {
+                        updateFeatureName(editedName)
+                        isEditingName = false
+                    })
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                } else {
+                    Text(layer.feature.properties["name"]?.stringValue ??
+                         layer.feature.properties["Name"]?.stringValue ??
+                         "Unnamed Feature")
+                }
+
+                Spacer()
+
+                if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
+                    Text("Editing")
+                        .foregroundColor(.blue)
+                }
+
+                Group {
+                    // Edit Button
+                    Button(action: {
+                        toggleEditMode()
+                    }) {
+                        Image(systemName: "pencil")
+                            .imageScale(.small)
+                    }
+                    .buttonStyle(HoverButtonStyle(isEditing: editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id))
+                    .help(editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id
+                          ? "Exit Edit Mode"
+                          : "Edit Feature")
+
+                    // Duplicate Button
+                    Button(action: {
+                        duplicateFeature()
+                    }) {
+                        Image(systemName: "plus.square.on.square")
+                            .imageScale(.small)
+                    }
+                    .buttonStyle(HoverButtonStyle())
+                    .help("Duplicate Feature")
+
+                    // Delete Button
+                    Button(action: {
+                        showingDeleteAlert = true
+                    }) {
+                        Image(systemName: "trash")
+                            .imageScale(.small)
+                    }
+                    .buttonStyle(HoverDeleteButtonStyle())
+                    .help("Delete Feature")
+                }
             }
+            .padding(.vertical, 2)
 
-            Spacer()
-
-            if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
-                Text("Editing")
-                    .foregroundColor(.blue)
-            }
-
-            Group {
-                // Edit Button
-                Button(action: {
-                    toggleEditMode()
-                }) {
-                    Image(systemName: "pencil")
-                        .imageScale(.small)
-                }
-                .buttonStyle(HoverButtonStyle(isEditing: editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id))
-                .help(editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id
-                      ? "Exit Edit Mode"
-                      : "Edit Feature")
-
-                // Duplicate Button
-                Button(action: {
-                    duplicateFeature()
-                }) {
-                    Image(systemName: "plus.square.on.square")
-                        .imageScale(.small)
-                }
-                .buttonStyle(HoverButtonStyle())
-                .help("Duplicate Feature")
-
-                // Delete Button
-                Button(action: {
-                    showingDeleteAlert = true
-                }) {
-                    Image(systemName: "trash")
-                        .imageScale(.small)
-                }
-                .buttonStyle(HoverDeleteButtonStyle())
-                .help("Delete Feature")
+            // Points list (shown when expanded)
+            if isShowingPoints {
+                FeaturePointsView(
+                    coordinates: layer.feature.geometry.coordinates,
+                    layerId: layer.id,
+                    editingState: $editingState,
+                    layers: $layers
+                )
+                .padding(.leading, 28)
             }
         }
-        .padding(.vertical, 2)
         .alert(isPresented: $showingDeleteAlert) {
             Alert(
                 title: Text("Delete Feature"),
@@ -632,6 +656,108 @@ struct FeatureRowView: View {
                 layers[i].isVisible = (layers[i].feature.id == layer.feature.id)
             }
         }
+    }
+}
+
+struct FeaturePointsView: View {
+    let coordinates: [[Double]]
+    let layerId: UUID
+    @Binding var editingState: EditingState
+    @Binding var layers: [LayerState]
+    @State private var isPointAnimating: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(coordinates.indices, id: \.self) { index in
+                PointRowView(
+                    index: index,
+                    coordinate: coordinates[index],
+                    isSelected: editingState.selectedPointIndex == index,
+                    isAnimating: isPointAnimating && editingState.selectedPointIndex == index
+                ) {
+                    handlePointSelection(index)
+                }
+            }
+        }
+        .padding(8)
+        .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+        .cornerRadius(6)
+    }
+
+    private func handlePointSelection(_ index: Int) {
+        if editingState.isEnabled && editingState.selectedPointIndex == index {
+            exitEditMode()
+        } else {
+            enterEditMode(forPoint: index)
+        }
+    }
+
+    private func enterEditMode(forPoint index: Int) {
+        editingState.isEnabled = true
+        editingState.selectedFeatureId = layerId
+        editingState.selectedPointIndex = index
+
+        if let layerIndex = layers.firstIndex(where: { $0.feature.id == layerId }) {
+            editingState.modifiedCoordinates = layers[layerIndex].feature.geometry.coordinates
+        }
+
+        for i in 0..<layers.count {
+            layers[i].isVisible = (layers[i].feature.id == layerId)
+        }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+            isPointAnimating = true
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            isPointAnimating = false
+        }
+    }
+
+    private func exitEditMode() {
+        editingState.isEnabled = false
+        editingState.selectedFeatureId = nil
+        editingState.selectedPointIndex = nil
+        editingState.modifiedCoordinates = nil
+
+        for i in 0..<layers.count {
+            layers[i].isVisible = true
+        }
+    }
+}
+
+struct PointRowView: View {
+    let index: Int
+    let coordinate: [Double]
+    let isSelected: Bool
+    let isAnimating: Bool
+    let onDoubleTap: () -> Void
+
+    var body: some View {
+        HStack {
+            Text("Point \(index + 1)")
+                .foregroundColor(.secondary)
+                .font(.caption)
+
+            Spacer()
+
+            Text(formatCoordinate(coordinate))
+                .font(.caption)
+                .monospaced()
+                .foregroundColor(isSelected ? .blue : .primary)
+                .scaleEffect(isAnimating ? 1.1 : 1.0)
+                .onTapGesture(count: 2) {
+                    onDoubleTap()
+                }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+    }
+
+    private func formatCoordinate(_ coordinate: [Double]) -> String {
+        guard coordinate.count >= 2 else { return "Invalid" }
+        return String(format: "%.6f, %.6f", coordinate[1], coordinate[0])
     }
 }
 
