@@ -148,6 +148,10 @@ struct ContentView: View {
             editingState.selectedPointIndex = nil // Clear point selection
             editingState.selectedFeatureId = nil
             editingState.modifiedCoordinates = nil
+            editingState.isDraggingPoint = false  // Ensure drag state is cleared
+
+            // Force a map update to ensure overlays are redrawn
+            shouldForceMapUpdate = true
 
             // Restore all layers visibility
             for i in 0..<layers.count {

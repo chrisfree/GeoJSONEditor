@@ -261,43 +261,47 @@ struct MapViewWrapper: NSViewRepresentable {
                   let mapView = gesture.view as? MKMapView else {
                 return
             }
-            
+
             let location = gesture.location(in: mapView)
             let coordinate = mapView.convert(location, toCoordinateFrom: mapView)
-            
+
             switch gesture.state {
             case .began:
                 if let closest = findClosestPoint(to: location, in: mapView) {
                     draggedPointIndex = closest.0
-                    parent.editingState.selectedPointIndex = closest.0  // Set selection when drag begins
+                    parent.editingState.selectedPointIndex = closest.0
                     parent.editingState.isDraggingPoint = true
                     mapView.isScrollEnabled = false
-                    
-                    // Force point overlay refresh
+
                     updatePointOverlays(mapView)
                 }
-                
+
             case .changed:
                 if let index = draggedPointIndex {
                     updatePolylineCoordinates(coordinate, at: index)
                 }
-                
+
             case .ended, .cancelled:
                 if let index = draggedPointIndex {
                     parent.onPointMoved(index, coordinate)
+                    draggedPointIndex = nil  // Clear the dragged point index
                 }
-                // Keep the selection when drag ends
-                // draggedPointIndex = nil  // Don't clear the selection
                 parent.editingState.isDraggingPoint = false
                 mapView.isScrollEnabled = true
                 debounceTimer?.invalidate()
                 debounceTimer = nil
-                
+
+//                // Force a refresh of the overlays
+//                mapView.removeOverlays(mapView.overlays)
+//                pointOverlays.removeAll()
+//                polylineToFeature.removeAll()
+//                mainPolyline = nil
+
             default:
                 break
             }
         }
-        
+
         // Helper method to refresh point overlays
         private func updatePointOverlays(_ mapView: MKMapView) {
             mapView.removeOverlays(pointOverlays)
