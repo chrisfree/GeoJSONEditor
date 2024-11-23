@@ -51,7 +51,7 @@ struct FeatureRowView: View {
 
                 if editingState.isEnabled && editingState.selectedFeatureId == layer.feature.id {
                     Text("Editing")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.primary)
                 }
 
                 Group {
@@ -101,6 +101,8 @@ struct FeatureRowView: View {
                 .padding(.leading, 28)
             }
         }
+        .listRowBackground(Color(NSColor.alternatingContentBackgroundColors[1])) 
+        .listRowSeparator(.hidden)
         .alert(isPresented: $showingDeleteAlert) {
             Alert(
                 title: Text("Delete Feature"),

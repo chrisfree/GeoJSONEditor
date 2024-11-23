@@ -55,6 +55,10 @@ struct ContentView: View {
                     onPointSelected: handlePointSelection,
                     onPointMoved: { index, newCoordinate in
                         handlePointMoved(index: index, newCoordinate: newCoordinate)
+                    },
+                    onEditingPointSelected: { index in
+                        // Handle point selection in the sidebar
+                        // You'll need to add this logic to your FeatureSidebarView
                     }
                 )
 
@@ -96,7 +100,6 @@ struct ContentView: View {
             }
         }
     }
-
 
     private func handlePointMoved(index: Int, newCoordinate: CLLocationCoordinate2D) {
         guard let selectedId = editingState.selectedFeatureId,
@@ -142,6 +145,7 @@ struct ContentView: View {
             }
         } else {
             // Exiting edit mode
+            editingState.selectedPointIndex = nil // Clear point selection
             editingState.selectedFeatureId = nil
             editingState.modifiedCoordinates = nil
 

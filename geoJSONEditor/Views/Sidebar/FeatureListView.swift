@@ -20,6 +20,8 @@ struct FeatureListView: View {
                                editingState: $editingState)  // Pass binding
             }
         }
+        .listStyle(.sidebar)  // This gives a more subtle selection highlight
+        .accentColor(.secondary) 
         .onChange(of: selectedFeatures) { newSelection in
             handleSelectionChange(newSelection)
         }

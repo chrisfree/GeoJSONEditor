@@ -21,10 +21,9 @@ struct FeaturePointsView: View {
                     index: index,
                     coordinate: coordinates[index],
                     isSelected: editingState.selectedPointIndex == index,
-                    isAnimating: isPointAnimating && editingState.selectedPointIndex == index
-                ) {
-                    handlePointSelection(index)
-                }
+                    isAnimating: isPointAnimating && editingState.selectedPointIndex == index,
+                    onDoubleTap: { handlePointSelection(index) }
+                )
             }
         }
         .padding(8)
@@ -74,6 +73,7 @@ struct FeaturePointsView: View {
     }
 }
 
+
 struct PointRowView: View {
     let index: Int
     let coordinate: [Double]
@@ -84,23 +84,25 @@ struct PointRowView: View {
     var body: some View {
         HStack {
             Text("Point \(index + 1)")
-                .foregroundColor(.secondary)
-                .font(.caption)
+                .foregroundStyle(isSelected ? .primary : .secondary)
 
             Spacer()
 
-            Text(formatCoordinate(coordinate))
-                .font(.caption)
-                .monospaced()
-                .foregroundColor(isSelected ? .blue : .primary)
-                .scaleEffect(isAnimating ? 1.1 : 1.0)
-                .onTapGesture(count: 2) {
-                    onDoubleTap()
-                }
+            coordinateView
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+    }
+
+    private var coordinateView: some View {
+        Text(formatCoordinate(coordinate))
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(isSelected ? .primary : .secondary)
+            .scaleEffect(isAnimating ? 1.1 : 1.0)
+            .onTapGesture(count: 2) {
+                onDoubleTap()
+            }
     }
 
     private func formatCoordinate(_ coordinate: [Double]) -> String {

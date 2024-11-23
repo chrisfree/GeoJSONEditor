@@ -149,6 +149,31 @@ struct MapViewWrapper: NSViewRepresentable {
         }
 
         @objc func handleClick(_ gesture: NSClickGestureRecognizer) {
+            guard let mapView = gesture.view as? MKMapView else { return }
+            
+            if parent.editingState.isEnabled {
+                let location = gesture.location(in: mapView)
+                
+                if let (index, _) = findClosestPoint(to: location, in: mapView) {
+                    // If clicking the already selected point, deselect it
+                    if parent.editingState.selectedPointIndex == index {
+                        parent.editingState.selectedPointIndex = nil
+                    } else {
+                        parent.editingState.selectedPointIndex = index
+                    }
+                    
+                    // Force overlay refresh
+                    updatePointOverlays(mapView)
+                    return
+                }
+                
+                // If clicking away from points, deselect current point
+                if parent.editingState.selectedPointIndex != nil {
+                    parent.editingState.selectedPointIndex = nil
+                    updatePointOverlays(mapView)
+                }
+            }
+
             guard parent.isDrawing,
                   let mapView = gesture.view as? MKMapView else {
                 return
