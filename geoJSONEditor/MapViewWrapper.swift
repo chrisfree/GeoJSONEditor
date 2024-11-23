@@ -27,6 +27,7 @@ struct MapViewWrapper: NSViewRepresentable {
     @Binding var shouldForceUpdate: Bool  // Change to binding
     let onPointSelected: (CLLocationCoordinate2D) -> Void
     let onPointMoved: (Int, CLLocationCoordinate2D) -> Void
+    let onEditingPointSelected: ((Int?) -> Void)?
 
     func makeNSView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -260,37 +261,52 @@ struct MapViewWrapper: NSViewRepresentable {
                   let mapView = gesture.view as? MKMapView else {
                 return
             }
-
+            
             let location = gesture.location(in: mapView)
             let coordinate = mapView.convert(location, toCoordinateFrom: mapView)
-
+            
             switch gesture.state {
             case .began:
-                // Update drag state when starting drag
                 if let closest = findClosestPoint(to: location, in: mapView) {
                     draggedPointIndex = closest.0
+                    parent.editingState.selectedPointIndex = closest.0  // Set selection when drag begins
                     parent.editingState.isDraggingPoint = true
                     mapView.isScrollEnabled = false
+                    
+                    // Force point overlay refresh
+                    updatePointOverlays(mapView)
                 }
-
+                
             case .changed:
-                if draggedPointIndex != nil {
-                    updatePolylineCoordinates(coordinate, at: draggedPointIndex!)
+                if let index = draggedPointIndex {
+                    updatePolylineCoordinates(coordinate, at: index)
                 }
-
+                
             case .ended, .cancelled:
                 if let index = draggedPointIndex {
                     parent.onPointMoved(index, coordinate)
                 }
-                // Clear drag state
-                draggedPointIndex = nil
+                // Keep the selection when drag ends
+                // draggedPointIndex = nil  // Don't clear the selection
                 parent.editingState.isDraggingPoint = false
                 mapView.isScrollEnabled = true
                 debounceTimer?.invalidate()
                 debounceTimer = nil
-
+                
             default:
                 break
+            }
+        }
+        
+        // Helper method to refresh point overlays
+        private func updatePointOverlays(_ mapView: MKMapView) {
+            mapView.removeOverlays(pointOverlays)
+            pointOverlays.removeAll()
+            
+            for (index, coordinate) in currentCoordinates.enumerated() {
+                let point = EditablePoint(coordinate: coordinate, index: index)
+                pointOverlays.append(point)
+                mapView.addOverlay(point, level: .aboveLabels)
             }
         }
 
@@ -298,9 +314,18 @@ struct MapViewWrapper: NSViewRepresentable {
             if let point = overlay as? EditablePoint {
                 let circle = MKCircle(center: point.coordinate, radius: 2)
                 let renderer = MKCircleRenderer(circle: circle)
-                renderer.fillColor = .orange
-                renderer.strokeColor = .white
-                renderer.lineWidth = 2
+
+                // Update color logic - check both selection and drag state
+                if parent.editingState.selectedPointIndex == point.index || draggedPointIndex == point.index {
+                    renderer.fillColor = .systemBlue
+                    renderer.strokeColor = .white
+                    renderer.lineWidth = 3
+                } else {
+                    renderer.fillColor = .orange
+                    renderer.strokeColor = .white
+                    renderer.lineWidth = 2
+                }
+
                 return renderer
             } else if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
