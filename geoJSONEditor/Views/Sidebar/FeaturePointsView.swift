@@ -13,7 +13,7 @@ struct FeaturePointsView: View {
     @Binding var editingState: EditingState
     @Binding var layers: [LayerState]
     @State private var isPointAnimating: Bool = false
-    @State private var selectedIndices: Set<Int> = []
+    @State private var selectedIndices: [Int] = [] // Changed to array to maintain order
     @State private var lastSelectedIndex: Int? = nil
 
     var body: some View {
@@ -33,10 +33,18 @@ struct FeaturePointsView: View {
                             handleShiftClick(index)
                         }
                 )
+                .gesture(
+                    TapGesture()
+                        .modifiers(.command)
+                        .onEnded { _ in
+                            handleCommandClick(index)
+                        }
+                )
                 .simultaneousGesture(
                     TapGesture()
                         .onEnded { _ in
-                            if !NSEvent.modifierFlags.contains(.shift) {
+                            if !NSEvent.modifierFlags.contains(.shift) &&
+                               !NSEvent.modifierFlags.contains(.command) {
                                 handleRegularClick(index)
                             }
                         }
@@ -63,6 +71,22 @@ struct FeaturePointsView: View {
         }
     }
 
+    private func handleCommandClick(_ index: Int) {
+        guard editingState.isEnabled else {
+            enterEditMode(forPoint: index)
+            return
+        }
+
+        if let existingIndex = selectedIndices.firstIndex(of: index) {
+            // If already selected, remove it
+            selectedIndices.remove(at: existingIndex)
+        } else {
+            // If not selected, add it to the end to maintain order
+            selectedIndices.append(index)
+        }
+        lastSelectedIndex = index
+    }
+
     private func handleShiftClick(_ index: Int) {
         guard editingState.isEnabled, let last = lastSelectedIndex else {
             handleRegularClick(index)
@@ -70,7 +94,13 @@ struct FeaturePointsView: View {
         }
 
         let range = min(last, index)...max(last, index)
-        selectedIndices.formUnion(range)
+        // Convert to array to maintain order
+        let newIndices = Array(range)
+
+        // Remove any existing indices in the range
+        selectedIndices.removeAll { newIndices.contains($0) }
+        // Add all new indices at the end
+        selectedIndices.append(contentsOf: newIndices)
     }
 
     private func duplicateSelectionToNewLayer() {
@@ -79,8 +109,8 @@ struct FeaturePointsView: View {
         // Find the current layer
         guard let currentLayer = layers.first(where: { $0.id == layerId }) else { return }
 
-        // Create new coordinates array with only selected points
-        let selectedCoordinates = selectedIndices.sorted().compactMap { index in
+        // Create new coordinates array with only selected points in selection order
+        let selectedCoordinates = selectedIndices.compactMap { index in
             coordinates[safe: index]
         }
 
@@ -112,7 +142,7 @@ struct FeaturePointsView: View {
 
         // Switch selection to new layer
         editingState.selectedFeatureId = newFeature.id
-        selectedIndices = Set(0..<selectedCoordinates.count)
+        selectedIndices = Array(0..<selectedCoordinates.count)
         lastSelectedIndex = selectedCoordinates.count - 1
     }
 

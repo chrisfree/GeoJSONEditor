@@ -15,6 +15,7 @@ struct FeatureRowView: View {
     @State private var editedName: String = ""
     @State private var showingDeleteAlert: Bool = false
     @State private var isShowingPoints: Bool = false
+    @FocusState private var isTextFieldFocused: Bool
 
     var body: some View {
         DisclosureGroup(
@@ -34,15 +35,19 @@ struct FeatureRowView: View {
 
                     if isEditingName {
                         TextField("Feature Name",
-                                text: $editedName,
-                                onCommit: {
-                            updateFeatureName(editedName)
-                            isEditingName = false
-                        })
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .onExitCommand { // Handle escape key
-                            isEditingName = false
-                        }
+                                text: $editedName)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .focused($isTextFieldFocused)
+                            .onAppear {
+                                isTextFieldFocused = true
+                            }
+                            .onSubmit {
+                                updateFeatureName(editedName)
+                                isEditingName = false
+                            }
+                            .onExitCommand { // Handle escape key
+                                isEditingName = false
+                            }
                     } else {
                         Text(layer.feature.properties["name"]?.stringValue ??
                              layer.feature.properties["Name"]?.stringValue ??
@@ -52,6 +57,10 @@ struct FeatureRowView: View {
                                            layer.feature.properties["Name"]?.stringValue ??
                                            "Unnamed Feature"
                                 isEditingName = true
+                                // Delay focus to ensure view is ready
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    isTextFieldFocused = true
+                                }
                             }
                     }
 
@@ -146,7 +155,7 @@ struct FeatureRowView: View {
         duplicatedFeature.properties = newProperties
 
         // Create a new LayerState with the duplicated feature
-        var newLayer = LayerState(feature: duplicatedFeature)
+        let newLayer = LayerState(feature: duplicatedFeature)
 
         // Add the new layer to the layers array
         layers.append(newLayer)
