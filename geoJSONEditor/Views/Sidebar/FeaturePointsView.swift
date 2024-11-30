@@ -8,13 +8,12 @@
 import SwiftUI
 
 struct FeaturePointsView: View {
+    @EnvironmentObject private var selectionState: SelectionState
     let coordinates: [[Double]]
     let layerId: UUID
     @Binding var editingState: EditingState
     @Binding var layers: [LayerState]
     @State private var isPointAnimating: Bool = false
-    @State private var selectedIndices: [Int] = [] // Changed to array to maintain order
-    @State private var lastSelectedIndex: Int? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -22,22 +21,22 @@ struct FeaturePointsView: View {
                 PointRowView(
                     index: index,
                     coordinate: coordinates[index],
-                    isSelected: selectedIndices.contains(index),
-                    isAnimating: isPointAnimating && selectedIndices.contains(index)
+                    isSelected: selectionState.selectedPoints.contains(index),
+                    isAnimating: isPointAnimating && selectionState.selectedPoints.contains(index)
                 )
                 .contentShape(Rectangle())
                 .gesture(
                     TapGesture()
                         .modifiers(.shift)
                         .onEnded { _ in
-                            handleShiftClick(index)
+                            selectionState.selectPoint(index, mode: .range)
                         }
                 )
                 .gesture(
                     TapGesture()
                         .modifiers(.command)
                         .onEnded { _ in
-                            handleCommandClick(index)
+                            selectionState.selectPoint(index, mode: .additive)
                         }
                 )
                 .simultaneousGesture(
@@ -50,7 +49,7 @@ struct FeaturePointsView: View {
                         }
                 )
                 .contextMenu {
-                    if !selectedIndices.isEmpty {
+                    if !selectionState.selectedPoints.isEmpty {
                         Button("Duplicate Selection to New Layer") {
                             duplicateSelectionToNewLayer()
                         }
@@ -66,51 +65,18 @@ struct FeaturePointsView: View {
         if !editingState.isEnabled {
             enterEditMode(forPoint: index)
         } else {
-            selectedIndices = [index]
-            lastSelectedIndex = index
+            selectionState.selectPoint(index, mode: .single)
         }
-    }
-
-    private func handleCommandClick(_ index: Int) {
-        guard editingState.isEnabled else {
-            enterEditMode(forPoint: index)
-            return
-        }
-
-        if let existingIndex = selectedIndices.firstIndex(of: index) {
-            // If already selected, remove it
-            selectedIndices.remove(at: existingIndex)
-        } else {
-            // If not selected, add it to the end to maintain order
-            selectedIndices.append(index)
-        }
-        lastSelectedIndex = index
-    }
-
-    private func handleShiftClick(_ index: Int) {
-        guard editingState.isEnabled, let last = lastSelectedIndex else {
-            handleRegularClick(index)
-            return
-        }
-
-        let range = min(last, index)...max(last, index)
-        // Convert to array to maintain order
-        let newIndices = Array(range)
-
-        // Remove any existing indices in the range
-        selectedIndices.removeAll { newIndices.contains($0) }
-        // Add all new indices at the end
-        selectedIndices.append(contentsOf: newIndices)
     }
 
     private func duplicateSelectionToNewLayer() {
-        guard !selectedIndices.isEmpty else { return }
+        guard !selectionState.selectedPoints.isEmpty else { return }
 
         // Find the current layer
         guard let currentLayer = layers.first(where: { $0.id == layerId }) else { return }
 
         // Create new coordinates array with only selected points in selection order
-        let selectedCoordinates = selectedIndices.compactMap { index in
+        let selectedCoordinates = selectionState.selectedPoints.compactMap { index in
             coordinates[safe: index]
         }
 
@@ -142,15 +108,13 @@ struct FeaturePointsView: View {
 
         // Switch selection to new layer
         editingState.selectedFeatureId = newFeature.id
-        selectedIndices = Array(0..<selectedCoordinates.count)
-        lastSelectedIndex = selectedCoordinates.count - 1
+        selectionState.selectPoint(0, mode: .single) // Select first point in new layer
     }
 
     private func enterEditMode(forPoint index: Int) {
         editingState.isEnabled = true
         editingState.selectedFeatureId = layerId
-        selectedIndices = [index]
-        lastSelectedIndex = index
+        selectionState.selectPoint(index, mode: .single)
 
         if let layerIndex = layers.firstIndex(where: { $0.id == layerId }) {
             editingState.modifiedCoordinates = layers[layerIndex].feature.geometry.coordinates
@@ -163,14 +127,6 @@ struct FeaturePointsView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             isPointAnimating = false
         }
-    }
-
-    private func exitEditMode() {
-        editingState.isEnabled = false
-        editingState.selectedFeatureId = nil
-        editingState.modifiedCoordinates = nil
-        selectedIndices.removeAll()
-        lastSelectedIndex = nil
     }
 }
 

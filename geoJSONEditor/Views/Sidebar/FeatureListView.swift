@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct FeatureListView: View {
+    @EnvironmentObject private var selectionState: SelectionState
     @Binding var selectedFeatures: Set<UUID>
     @Binding var layers: [LayerState]
     @Binding var editingState: EditingState
@@ -16,8 +17,8 @@ struct FeatureListView: View {
         List(selection: $selectedFeatures) {
             ForEach(layers) { layer in
                 FeatureRowView(layer: layer,
-                             layers: $layers,
-                             editingState: $editingState)
+                               layers: $layers,
+                               editingState: $editingState)
             }
             .onMove { source, destination in
                 layers.move(fromOffsets: source, toOffset: destination)
