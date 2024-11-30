@@ -18,16 +18,16 @@ import UniformTypeIdentifiers
 
 // MARK: - Main View
 struct MapViewWrapper: NSViewRepresentable {
+    @EnvironmentObject private var selectionState: SelectionState
     let features: [GeoJSONFeature]
     let selectedFeatures: Set<UUID>
     @Binding var isDrawing: Bool
     @Binding var currentPoints: [[Double]]
     @Binding var region: MKCoordinateRegion
     @Binding var editingState: EditingState
-    @Binding var shouldForceUpdate: Bool  // Change to binding
+    @Binding var shouldForceUpdate: Bool
     let onPointSelected: (CLLocationCoordinate2D) -> Void
     let onPointMoved: (Int, CLLocationCoordinate2D) -> Void
-    let onEditingPointSelected: ((Int?) -> Void)?
 
     func makeNSView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -50,6 +50,8 @@ struct MapViewWrapper: NSViewRepresentable {
     }
 
     func updateNSView(_ mapView: MKMapView, context: Context) {
+        print("\nUpdating map view...")
+        print("\nSelected Points: \(selectionState.selectedPoints)")
         // If forcing update or conditions are met, update the region
         if shouldForceUpdate ||
             (!editingState.isEnabled && context.coordinator.draggedPointIndex == nil) {
@@ -291,12 +293,6 @@ struct MapViewWrapper: NSViewRepresentable {
                 debounceTimer?.invalidate()
                 debounceTimer = nil
 
-//                // Force a refresh of the overlays
-//                mapView.removeOverlays(mapView.overlays)
-//                pointOverlays.removeAll()
-//                polylineToFeature.removeAll()
-//                mainPolyline = nil
-
             default:
                 break
             }
@@ -319,15 +315,14 @@ struct MapViewWrapper: NSViewRepresentable {
                 let circle = MKCircle(center: point.coordinate, radius: 2)
                 let renderer = MKCircleRenderer(circle: circle)
 
-                // Update color logic - check both selection and drag state
-                if parent.editingState.selectedPointIndex == point.index || draggedPointIndex == point.index {
-                    renderer.fillColor = .systemBlue
-                    renderer.strokeColor = .white
-                    renderer.lineWidth = 3
+                if parent.selectionState.selectedPoints.contains(point.index) {
+                    renderer.fillColor = .systemPink
+                    renderer.strokeColor = .clear
+                    renderer.lineWidth = 5
                 } else {
-                    renderer.fillColor = .orange
-                    renderer.strokeColor = .white
-                    renderer.lineWidth = 2
+                    renderer.fillColor = .white
+                    renderer.strokeColor = .clear
+                    renderer.lineWidth = 0
                 }
 
                 return renderer

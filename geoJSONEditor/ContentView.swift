@@ -10,6 +10,7 @@ import MapKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    @StateObject private var selectionState = SelectionState()
     @State private var selectedFeatures: Set<UUID> = []
     @State private var layers: [LayerState] = []
     @State private var mapRegion = MKCoordinateRegion(
@@ -51,15 +52,9 @@ struct ContentView: View {
                     currentPoints: $currentPoints,
                     region: $mapRegion,
                     editingState: $editingState,
-                    shouldForceUpdate: $shouldForceMapUpdate,  // Pass as binding
+                    shouldForceUpdate: $shouldForceMapUpdate,
                     onPointSelected: handlePointSelection,
-                    onPointMoved: { index, newCoordinate in
-                        handlePointMoved(index: index, newCoordinate: newCoordinate)
-                    },
-                    onEditingPointSelected: { index in
-                        // Handle point selection in the sidebar
-                        // You'll need to add this logic to your FeatureSidebarView
-                    }
+                    onPointMoved: handlePointMoved
                 )
 
                 // Recenter button overlay
@@ -80,6 +75,7 @@ struct ContentView: View {
                 .help("Recenter Map")
             }
         }
+        .environmentObject(selectionState) 
         .alert(isPresented: $showingAlert) {
             Alert(title: Text("GeoJSON"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
@@ -90,42 +86,15 @@ struct ContentView: View {
                 }
                 .disabled(selectedFeatures.isEmpty && !editingState.isEnabled)
 
-                Button("Export GeoJSON") {
+                Button("Export") {
                     exportGeoJSON()
                 }
 
-                Button("Import GeoJSON") {
+                Button("Import") {
                     importGeoJSON()
                 }
             }
         }
-    }
-
-    private func handlePointMoved(index: Int, newCoordinate: CLLocationCoordinate2D) {
-        guard let selectedId = editingState.selectedFeatureId,
-              let layerIndex = layers.firstIndex(where: { $0.feature.id == selectedId }) else {
-            print("Could not find layer for selected feature")
-            return
-        }
-
-        // Create new coordinates array
-        var newCoords = layers[layerIndex].feature.geometry.coordinates
-        guard index < newCoords.count else {
-            print("Invalid index for coordinates")
-            return
-        }
-
-        // Update the coordinate
-        newCoords[index] = [newCoordinate.longitude, newCoordinate.latitude]
-
-        // Create updated feature
-        var updatedFeature = layers[layerIndex].feature
-        updatedFeature.geometry.coordinates = newCoords
-
-        // Update the layer
-        layers[layerIndex].feature = updatedFeature
-
-        print("Updated coordinates for point \(index) in feature \(selectedId)")
     }
 
     private func toggleEditMode() {
@@ -376,18 +345,32 @@ struct ContentView: View {
         }
     }
 
-    private func handlePointMoved(_ index: Int, _ newCoordinate: CLLocationCoordinate2D) {
-        guard let featureId = editingState.selectedFeatureId,
-              let layerIndex = layers.firstIndex(where: { $0.feature.id == featureId }) else {
+    // In ContentView, keep only this version:
+    private func handlePointMoved(index: Int, newCoordinate: CLLocationCoordinate2D) {
+        guard let selectedId = editingState.selectedFeatureId,
+              let layerIndex = layers.firstIndex(where: { $0.feature.id == selectedId }) else {
+            print("Could not find layer for selected feature")
             return
         }
 
-        var feature = layers[layerIndex].feature
-        var coordinates = feature.geometry.coordinates
-        coordinates[index] = [newCoordinate.longitude, newCoordinate.latitude]
-        feature.geometry.coordinates = coordinates
+        // Create new coordinates array
+        var newCoords = layers[layerIndex].feature.geometry.coordinates
+        guard index < newCoords.count else {
+            print("Invalid index for coordinates")
+            return
+        }
 
-        layers[layerIndex].feature = feature
+        // Update the coordinate
+        newCoords[index] = [newCoordinate.longitude, newCoordinate.latitude]
+
+        // Create updated feature
+        var updatedFeature = layers[layerIndex].feature
+        updatedFeature.geometry.coordinates = newCoords
+
+        // Update the layer
+        layers[layerIndex].feature = updatedFeature
+
+        print("Updated coordinates for point \(index) in feature \(selectedId)")
     }
 
     private func saveEdits() {

@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct FeatureSidebarView: View {
+    @EnvironmentObject private var selectionState: SelectionState
     @Binding var selectedFeatures: Set<UUID>
     @Binding var layers: [LayerState]
     @Binding var editingState: EditingState

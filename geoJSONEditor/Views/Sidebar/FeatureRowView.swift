@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct FeatureRowView: View {
+    @EnvironmentObject private var selectionState: SelectionState
     let layer: LayerState
     @Binding var layers: [LayerState]
     @Binding var editingState: EditingState
@@ -34,8 +35,7 @@ struct FeatureRowView: View {
                     VisibilityButton(layer: layer, layers: $layers)
 
                     if isEditingName {
-                        TextField("Feature Name",
-                                text: $editedName)
+                        TextField("Feature Name", text: $editedName)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .focused($isTextFieldFocused)
                             .onAppear {
@@ -54,14 +54,14 @@ struct FeatureRowView: View {
                              "Unnamed Feature")
                             .onTapGesture(count: 2) { // Handle double click/tap
                                 editedName = layer.feature.properties["name"]?.stringValue ??
-                                           layer.feature.properties["Name"]?.stringValue ??
-                                           "Unnamed Feature"
+                                layer.feature.properties["Name"]?.stringValue ??
+                                "Unnamed Feature"
                                 isEditingName = true
                                 // Delay focus to ensure view is ready
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                     isTextFieldFocused = true
                                 }
-                            }
+                        }
                     }
 
                     Spacer()
