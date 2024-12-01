@@ -161,8 +161,11 @@ struct MapViewWrapper: NSViewRepresentable {
                     // If clicking the already selected point, deselect it
                     if parent.editingState.selectedPointIndex == index {
                         parent.editingState.selectedPointIndex = nil
+                        parent.selectionState.selectedPoints
+                            .removeAll(where: { $0 == index })
                     } else {
                         parent.editingState.selectedPointIndex = index
+                        parent.selectionState.selectedPoints.append(index)
                     }
                     
                     // Force overlay refresh
@@ -275,6 +278,11 @@ struct MapViewWrapper: NSViewRepresentable {
                     parent.editingState.isDraggingPoint = true
                     mapView.isScrollEnabled = false
 
+                    // Add the selected point to the array if it doesn't already exist
+                    if !parent.selectionState.selectedPoints.contains(closest.0) {
+                        parent.selectionState.selectedPoints.append(closest.0)
+                    }
+
                     updatePointOverlays(mapView)
                 }
 
@@ -300,9 +308,12 @@ struct MapViewWrapper: NSViewRepresentable {
 
         // Helper method to refresh point overlays
         private func updatePointOverlays(_ mapView: MKMapView) {
-            mapView.removeOverlays(pointOverlays)
+            // Remove only existing point overlays
+            let existingPoints = pointOverlays
+            mapView.removeOverlays(existingPoints)
             pointOverlays.removeAll()
-            
+
+            // Add new point overlays
             for (index, coordinate) in currentCoordinates.enumerated() {
                 let point = EditablePoint(coordinate: coordinate, index: index)
                 pointOverlays.append(point)
@@ -310,15 +321,43 @@ struct MapViewWrapper: NSViewRepresentable {
             }
         }
 
+        private func getCurrentZoomLevel(_ mapView: MKMapView) -> Double {
+            // Calculate zoom level based on latitude span
+            return log2(360 * ((Double(mapView.frame.width) / 256) / mapView.region.span.latitudeDelta)) + 1
+        }
+
+        private func getPointRadius(for mapView: MKMapView) -> CLLocationDistance {
+            let zoomLevel = mapView.zoomLevel
+
+            // Start with a small base radius in meters
+            let baseRadius = 2.0
+
+            // Scale down as we zoom in, up as we zoom out
+            let scaleFactor = pow(2.0, 15 - zoomLevel)
+
+            // Clamp the radius between 2 and 10 meters
+            return min(max(baseRadius * scaleFactor, 2), 10)
+        }
+
+        private func getLineWidth(for zoomLevel: Double) -> CGFloat {
+            // Base width is 5 points
+            let baseWidth: CGFloat = 5.0
+            // Scale factor decreases as zoom level increases
+            let scaleFactor = max(1.0, 15.0 / pow(2, zoomLevel - 10))
+            // Clamp the final width between 2 and 15 points
+            return min(max(baseWidth * scaleFactor, 2), 15)
+        }
+
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let point = overlay as? EditablePoint {
-                let circle = MKCircle(center: point.coordinate, radius: 2)
+                let radius = getPointRadius(for: mapView)
+                let circle = MKCircle(center: point.coordinate, radius: radius)
                 let renderer = MKCircleRenderer(circle: circle)
 
                 if parent.selectionState.selectedPoints.contains(point.index) {
                     renderer.fillColor = .systemPink
                     renderer.strokeColor = .clear
-                    renderer.lineWidth = 5
+                    renderer.lineWidth = 1.5
                 } else {
                     renderer.fillColor = .white
                     renderer.strokeColor = .clear
@@ -332,17 +371,53 @@ struct MapViewWrapper: NSViewRepresentable {
                 if polyline === mainPolyline {
                     renderer.strokeColor = .systemBlue
                 } else if let feature = polylineToFeature[polyline] {
-                    // Use the feature type's color
                     renderer.strokeColor = TrackFeatureType.fromFeature(feature).color
                 } else {
                     renderer.strokeColor = .systemGray
                 }
 
+                // Fixed line width - no need to scale this with zoom
                 renderer.lineWidth = 5
+
                 return renderer
             }
 
             return MKOverlayRenderer(overlay: overlay)
         }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            // Only update if we're not dragging a point
+            if draggedPointIndex == nil {
+                // Just update the point overlays
+                updatePointOverlays(mapView)
+            }
+        }
+
+        // Add to the Coordinator class
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            // Called when zoom/pan starts
+            updateOverlaysDuringZoom(mapView)
+        }
+
+        func mapViewRegionIsChanging(_ mapView: MKMapView) {
+            // Called continuously during zoom/pan
+            updateOverlaysDuringZoom(mapView)
+        }
+
+        private func updateOverlaysDuringZoom(_ mapView: MKMapView) {
+            // Only update if we're not dragging a point
+            if draggedPointIndex == nil {
+                // Just update the point overlays
+                updatePointOverlays(mapView)
+            }
+        }
+    }
+}
+
+extension MKMapView {
+    var zoomLevel: Double {
+        let span = self.region.span.longitudeDelta
+        let zoomLevel = log2(360.0 / span)
+        return min(max(zoomLevel, 0), 20)
     }
 }
