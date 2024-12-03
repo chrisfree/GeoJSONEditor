@@ -330,13 +330,13 @@ struct MapViewWrapper: NSViewRepresentable {
             let zoomLevel = mapView.zoomLevel
 
             // Start with a small base radius in meters
-            let baseRadius = 2.0
+            let baseRadius = 3.5
 
             // Scale down as we zoom in, up as we zoom out
             let scaleFactor = pow(2.0, 15 - zoomLevel)
 
             // Clamp the radius between 2 and 10 meters
-            return min(max(baseRadius * scaleFactor, 2), 10)
+            return min(max(baseRadius * scaleFactor, 2), 15)
         }
 
         private func getLineWidth(for zoomLevel: Double) -> CGFloat {
@@ -356,12 +356,12 @@ struct MapViewWrapper: NSViewRepresentable {
 
                 if parent.selectionState.selectedPoints.contains(point.index) {
                     renderer.fillColor = .systemPink
-                    renderer.strokeColor = .clear
+                    renderer.strokeColor = .white
                     renderer.lineWidth = 1.5
                 } else {
-                    renderer.fillColor = .white
-                    renderer.strokeColor = .clear
-                    renderer.lineWidth = 0
+                    renderer.fillColor = .black
+                    renderer.strokeColor = .white
+                    renderer.lineWidth = 1.75
                 }
 
                 return renderer
