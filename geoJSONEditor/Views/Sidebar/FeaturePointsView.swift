@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MapKit
 
 struct FeaturePointsView: View {
     @EnvironmentObject private var selectionState: SelectionState
@@ -50,8 +51,18 @@ struct FeaturePointsView: View {
                 )
                 .contextMenu {
                     if !selectionState.selectedPoints.isEmpty {
-                        Button("Duplicate Selection to New Layer") {
+                        Button("Duplicate selection to new layer") {
                             duplicateSelectionToNewLayer()
+                        }
+                    }
+                    if selectionState.selectedPoints.count == 1 {
+                        Button("Delete point") {
+                            deletePoint()
+                        }
+
+                        Button("Insert point after...") {
+                            print("Insert point after \(selectionState.selectedPoints)")
+                            insertPoint()
                         }
                     }
                 }
@@ -109,6 +120,96 @@ struct FeaturePointsView: View {
         // Switch selection to new layer
         editingState.selectedFeatureId = newFeature.id
         selectionState.selectPoint(0, mode: .single) // Select first point in new layer
+    }
+
+    func calculateMidpoint(coordinate1: CLLocationCoordinate2D, coordinate2: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
+
+        let midLatitude = (coordinate1.latitude + coordinate2.latitude) / 2
+
+        let midLongitude = (coordinate1.longitude + coordinate2.longitude) / 2
+
+        return CLLocationCoordinate2D(latitude: midLatitude, longitude: midLongitude)
+
+    }
+
+    private func deletePoint() {
+        guard !selectionState.selectedPoints.isEmpty else { return }
+
+        // Find the current layer
+        guard let currentLayerIndex = layers.firstIndex(where: { $0.id == layerId }) else { return }
+
+        // Get the selected point index
+        guard let selectedPointIndex = selectionState.selectedPoints.first else { return }
+
+        // Ensure we don't delete the last point
+        if layers[currentLayerIndex].feature.geometry.coordinates.count > 1 {
+            // Remove the point at the selected index
+            layers[currentLayerIndex].feature.geometry.coordinates.remove(at: selectedPointIndex)
+
+            // Clear selection after deletion
+            selectionState.clearPointSelection()
+        }
+    }
+
+    private func insertPoint() {
+        guard !selectionState.selectedPoints.isEmpty else { return }
+
+        // Find the current layer
+        guard let currentLayerIndex = layers.firstIndex(where: { $0.id == layerId }) else { return }
+
+        // Get the selected point index
+        guard let selectedPointIndex = selectionState.selectedPoints.first else { return }
+
+        // Get insertion index (inserting after the selected point)
+        let insertionIndex = min(selectedPointIndex + 1, layers[currentLayerIndex].feature.geometry.coordinates.count)
+
+        let pointA = layers[currentLayerIndex].feature.geometry.coordinates[selectedPointIndex]
+        let insertAfterCoordinate = CLLocationCoordinate2D(
+            latitude: pointA[1],
+            longitude: pointA[0]
+        )
+
+        let pointB = layers[currentLayerIndex].feature.geometry.coordinates[insertionIndex]
+        let insertBeforeCoordinate = CLLocationCoordinate2D(
+            latitude: pointB[1],
+            longitude: pointB[0]
+        )
+
+        // Create the new coordinate
+        let newCoordinate = calculateMidpoint(
+            coordinate1: insertAfterCoordinate,
+            coordinate2: insertBeforeCoordinate
+        )
+
+        // Insert the point
+        insertPoint(
+            coordinate: newCoordinate,
+            at: insertionIndex,
+            into: &layers[currentLayerIndex].feature
+        )
+
+        // Clear selection after insertion
+        selectionState.clearPointSelection()
+    }
+
+    private func insertPoint(coordinate: CLLocationCoordinate2D, at index: Int, into feature: inout GeoJSONFeature) {
+        // Ensure the index is valid
+        guard index >= 0 && index <= feature.geometry.coordinates.count else {
+            print("Invalid index for insertion")
+            return
+        }
+
+        // Convert CLLocationCoordinate2D to [Double] format (longitude, latitude)
+        let coordinateArray = [coordinate.longitude, coordinate.latitude]
+
+        // Validate geometry type
+        guard feature.geometry.type == "LineString" else {
+            print("Unsupported geometry type: \(feature.geometry.type)")
+            return
+        }
+
+        // Insert the coordinate array at the specified index
+        feature.geometry.coordinates.insert(coordinateArray, at: index)
     }
 
     private func enterEditMode(forPoint index: Int) {
