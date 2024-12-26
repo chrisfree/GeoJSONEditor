@@ -28,5 +28,7 @@ struct GeoSmithApp: App {
             ContentView()
         }
         .modelContainer(sharedModelContainer)
+        // These defaults assume a retina display MBP. Not exactly ideal.
+        .defaultSize(width: 1512 * 0.9, height: 982 * 0.9)
     }
 }
