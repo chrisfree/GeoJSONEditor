@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct geoJSONEditorApp: App {
+struct GeoSmithApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,

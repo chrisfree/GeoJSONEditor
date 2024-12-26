@@ -24,25 +24,25 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		8306B7662CE8EFAD00FF9936 /* geoJSONEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = geoJSONEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		8306B7792CE8EFAE00FF9936 /* geoJSONEditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = geoJSONEditorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		8306B7832CE8EFAE00FF9936 /* geoJSONEditorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = geoJSONEditorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8306B7662CE8EFAD00FF9936 /* GeoSmith.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GeoSmith.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8306B7792CE8EFAE00FF9936 /* GeoSmithTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeoSmithTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		8306B7832CE8EFAE00FF9936 /* GeoSmithUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeoSmithUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		8306B7682CE8EFAD00FF9936 /* geoJSONEditor */ = {
+		8306B7682CE8EFAD00FF9936 /* GeoSmith */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = geoJSONEditor;
+			path = GeoSmith;
 			sourceTree = "<group>";
 		};
-		8306B77C2CE8EFAE00FF9936 /* geoJSONEditorTests */ = {
+		8306B77C2CE8EFAE00FF9936 /* GeoSmithTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = geoJSONEditorTests;
+			path = GeoSmithTests;
 			sourceTree = "<group>";
 		};
-		8306B7862CE8EFAE00FF9936 /* geoJSONEditorUITests */ = {
+		8306B7862CE8EFAE00FF9936 /* GeoSmithUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = geoJSONEditorUITests;
+			path = GeoSmithUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,9 +75,9 @@
 		8306B75D2CE8EFAD00FF9936 = {
 			isa = PBXGroup;
 			children = (
-				8306B7682CE8EFAD00FF9936 /* geoJSONEditor */,
-				8306B77C2CE8EFAE00FF9936 /* geoJSONEditorTests */,
-				8306B7862CE8EFAE00FF9936 /* geoJSONEditorUITests */,
+				8306B7682CE8EFAD00FF9936 /* GeoSmith */,
+				8306B77C2CE8EFAE00FF9936 /* GeoSmithTests */,
+				8306B7862CE8EFAE00FF9936 /* GeoSmithUITests */,
 				8306B7672CE8EFAD00FF9936 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,9 +85,9 @@
 		8306B7672CE8EFAD00FF9936 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8306B7662CE8EFAD00FF9936 /* geoJSONEditor.app */,
-				8306B7792CE8EFAE00FF9936 /* geoJSONEditorTests.xctest */,
-				8306B7832CE8EFAE00FF9936 /* geoJSONEditorUITests.xctest */,
+				8306B7662CE8EFAD00FF9936 /* GeoSmith.app */,
+				8306B7792CE8EFAE00FF9936 /* GeoSmithTests.xctest */,
+				8306B7832CE8EFAE00FF9936 /* GeoSmithUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,9 +95,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		8306B7652CE8EFAD00FF9936 /* geoJSONEditor */ = {
+		8306B7652CE8EFAD00FF9936 /* GeoSmith */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8306B78D2CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "geoJSONEditor" */;
+			buildConfigurationList = 8306B78D2CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "GeoSmith" */;
 			buildPhases = (
 				8306B7622CE8EFAD00FF9936 /* Sources */,
 				8306B7632CE8EFAD00FF9936 /* Frameworks */,
@@ -108,18 +108,18 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				8306B7682CE8EFAD00FF9936 /* geoJSONEditor */,
+				8306B7682CE8EFAD00FF9936 /* GeoSmith */,
 			);
-			name = geoJSONEditor;
+			name = GeoSmith;
 			packageProductDependencies = (
 			);
 			productName = geoJSONEditor;
-			productReference = 8306B7662CE8EFAD00FF9936 /* geoJSONEditor.app */;
+			productReference = 8306B7662CE8EFAD00FF9936 /* GeoSmith.app */;
 			productType = "com.apple.product-type.application";
 		};
-		8306B7782CE8EFAE00FF9936 /* geoJSONEditorTests */ = {
+		8306B7782CE8EFAE00FF9936 /* GeoSmithTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8306B7902CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "geoJSONEditorTests" */;
+			buildConfigurationList = 8306B7902CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "GeoSmithTests" */;
 			buildPhases = (
 				8306B7752CE8EFAE00FF9936 /* Sources */,
 				8306B7762CE8EFAE00FF9936 /* Frameworks */,
@@ -131,18 +131,18 @@
 				8306B77B2CE8EFAE00FF9936 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				8306B77C2CE8EFAE00FF9936 /* geoJSONEditorTests */,
+				8306B77C2CE8EFAE00FF9936 /* GeoSmithTests */,
 			);
-			name = geoJSONEditorTests;
+			name = GeoSmithTests;
 			packageProductDependencies = (
 			);
 			productName = geoJSONEditorTests;
-			productReference = 8306B7792CE8EFAE00FF9936 /* geoJSONEditorTests.xctest */;
+			productReference = 8306B7792CE8EFAE00FF9936 /* GeoSmithTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		8306B7822CE8EFAE00FF9936 /* geoJSONEditorUITests */ = {
+		8306B7822CE8EFAE00FF9936 /* GeoSmithUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8306B7932CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "geoJSONEditorUITests" */;
+			buildConfigurationList = 8306B7932CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "GeoSmithUITests" */;
 			buildPhases = (
 				8306B77F2CE8EFAE00FF9936 /* Sources */,
 				8306B7802CE8EFAE00FF9936 /* Frameworks */,
@@ -154,13 +154,13 @@
 				8306B7852CE8EFAE00FF9936 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				8306B7862CE8EFAE00FF9936 /* geoJSONEditorUITests */,
+				8306B7862CE8EFAE00FF9936 /* GeoSmithUITests */,
 			);
-			name = geoJSONEditorUITests;
+			name = GeoSmithUITests;
 			packageProductDependencies = (
 			);
 			productName = geoJSONEditorUITests;
-			productReference = 8306B7832CE8EFAE00FF9936 /* geoJSONEditorUITests.xctest */;
+			productReference = 8306B7832CE8EFAE00FF9936 /* GeoSmithUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -186,7 +186,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 8306B7612CE8EFAD00FF9936 /* Build configuration list for PBXProject "geoJSONEditor" */;
+			buildConfigurationList = 8306B7612CE8EFAD00FF9936 /* Build configuration list for PBXProject "GeoSmith" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -200,9 +200,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				8306B7652CE8EFAD00FF9936 /* geoJSONEditor */,
-				8306B7782CE8EFAE00FF9936 /* geoJSONEditorTests */,
-				8306B7822CE8EFAE00FF9936 /* geoJSONEditorUITests */,
+				8306B7652CE8EFAD00FF9936 /* GeoSmith */,
+				8306B7782CE8EFAE00FF9936 /* GeoSmithTests */,
+				8306B7822CE8EFAE00FF9936 /* GeoSmithUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -258,12 +258,12 @@
 /* Begin PBXTargetDependency section */
 		8306B77B2CE8EFAE00FF9936 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 8306B7652CE8EFAD00FF9936 /* geoJSONEditor */;
+			target = 8306B7652CE8EFAD00FF9936 /* GeoSmith */;
 			targetProxy = 8306B77A2CE8EFAE00FF9936 /* PBXContainerItemProxy */;
 		};
 		8306B7852CE8EFAE00FF9936 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 8306B7652CE8EFAD00FF9936 /* geoJSONEditor */;
+			target = 8306B7652CE8EFAD00FF9936 /* GeoSmith */;
 			targetProxy = 8306B7842CE8EFAE00FF9936 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -393,11 +393,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CODE_SIGN_ENTITLEMENTS = geoJSONEditor/geoJSONEditor.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GeoSmith/GeoSmith.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"geoJSONEditor/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"GeoSmith/Preview Content\"";
 				DEVELOPMENT_TEAM = BR64C5CNSD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -410,8 +411,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoJSONEditor;
+				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoSmith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -423,11 +425,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CODE_SIGN_ENTITLEMENTS = geoJSONEditor/geoJSONEditor.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GeoSmith/GeoSmith.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"geoJSONEditor/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "\"GeoSmith/Preview Content\"";
 				DEVELOPMENT_TEAM = BR64C5CNSD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -440,8 +443,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoJSONEditor;
+				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoSmith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -457,11 +461,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoJSONEditorTests;
+				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoSmithTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/geoJSONEditor.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/geoJSONEditor";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GeoSmith.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GeoSmith";
 			};
 			name = Debug;
 		};
@@ -475,11 +479,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoJSONEditorTests;
+				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoSmithTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/geoJSONEditor.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/geoJSONEditor";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GeoSmith.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GeoSmith";
 			};
 			name = Release;
 		};
@@ -491,7 +495,7 @@
 				DEVELOPMENT_TEAM = BR64C5CNSD;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoJSONEditorUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoSmithUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -507,7 +511,7 @@
 				DEVELOPMENT_TEAM = BR64C5CNSD;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoJSONEditorUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = chrisfree.geoSmithUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -518,7 +522,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		8306B7612CE8EFAD00FF9936 /* Build configuration list for PBXProject "geoJSONEditor" */ = {
+		8306B7612CE8EFAD00FF9936 /* Build configuration list for PBXProject "GeoSmith" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8306B78B2CE8EFAE00FF9936 /* Debug */,
@@ -527,7 +531,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8306B78D2CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "geoJSONEditor" */ = {
+		8306B78D2CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "GeoSmith" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8306B78E2CE8EFAE00FF9936 /* Debug */,
@@ -536,7 +540,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8306B7902CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "geoJSONEditorTests" */ = {
+		8306B7902CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "GeoSmithTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8306B7912CE8EFAE00FF9936 /* Debug */,
@@ -545,7 +549,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8306B7932CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "geoJSONEditorUITests" */ = {
+		8306B7932CE8EFAE00FF9936 /* Build configuration list for PBXNativeTarget "GeoSmithUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8306B7942CE8EFAE00FF9936 /* Debug */,
