@@ -25,6 +25,7 @@ struct ContentView: View {
     @State private var editingState = EditingState()
     @State private var lastImportedURL: URL?
     @State private var shouldForceMapUpdate: Bool = false
+    @State private var isInspectorVisible: Bool = true
 
     var visibleFeatures: [GeoJSONFeature] {
         layers.filter(\.isVisible).map(\.feature)
@@ -74,8 +75,16 @@ struct ContentView: View {
                 .padding([.trailing, .bottom], 16)
                 .help("Recenter Map")
             }
+            
+            // Inspector view
+            if isInspectorVisible {
+                InspectorView(
+                    selectedFeatures: $selectedFeatures,
+                    layers: $layers
+                )
+            }
         }
-        .environmentObject(selectionState) 
+        .environmentObject(selectionState)
         .alert(isPresented: $showingAlert) {
             Alert(title: Text("GeoJSON"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
@@ -93,6 +102,15 @@ struct ContentView: View {
                 Button("Import") {
                     importGeoJSON()
                 }
+                
+                Button {
+                    withAnimation {
+                        isInspectorVisible.toggle()
+                    }
+                } label: {
+                    Image(systemName: "sidebar.right")
+                }
+                .help(isInspectorVisible ? "Hide Inspector" : "Show Inspector")
             }
         }
     }
