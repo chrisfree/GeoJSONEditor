@@ -179,18 +179,12 @@ struct InspectorView: View {
                             }
                             // Add new property row at the end
                             HStack(spacing: 8) {
-                                TextField("", text: $newPropertyKey)
+                                TextField("Key", text: $newPropertyKey, prompt: Text("Key").foregroundColor(.gray))
                                     .textFieldStyle(RoundedBorderTextFieldStyle())
                                     .frame(width: 100)
-                                    .placeholder(when: newPropertyKey.isEmpty) {
-                                        Text("Key").foregroundColor(.gray)
-                                    }
                                 
-                                TextField("", text: $newPropertyValue)
+                                TextField("Value", text: $newPropertyValue, prompt: Text("Value").foregroundColor(.gray))
                                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .placeholder(when: newPropertyValue.isEmpty) {
-                                        Text("Value").foregroundColor(.gray)
-                                    }
                                 
                                 Button(action: addNewProperty) {
                                     Image(systemName: "plus.circle.fill")
@@ -232,18 +226,5 @@ struct InspectorView: View {
         }
         .frame(width: 300)
         .padding(.vertical)
-    }
-}
-
-extension View {
-    func placeholder<Content: View>(
-        when shouldShow: Bool,
-        alignment: Alignment = .leading,
-        @ViewBuilder placeholder: () -> Content) -> some View {
-
-        ZStack(alignment: alignment) {
-            placeholder().opacity(shouldShow ? 1 : 0)
-            self
-        }
     }
 }
