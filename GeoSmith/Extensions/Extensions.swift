@@ -75,4 +75,11 @@ extension NSColor {
     var asColor: Color {
         Color(self)
     }
+    
+    // Add conversion to UIColor/NSColor for MKOverlayRenderer
+    var mapColor: NSColor {
+        // Convert to RGB color space if needed
+        guard let rgbColor = usingColorSpace(.sRGB) else { return self }
+        return rgbColor
+    }
 }

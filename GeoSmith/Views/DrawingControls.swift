@@ -20,15 +20,32 @@ struct DrawingControls: View {
                 startNewFeature()
             }
 
-            Button("Finish Drawing") {
+            Button(buttonLabel) {
                 finishDrawing()
             }
-            .disabled(!isDrawing)
+            .disabled(!isDrawing || !canFinishDrawing)
 
             Button("Delete") {
                 deleteSelectedFeatures()
             }
             .disabled(selectedFeatures.isEmpty)
+        }
+    }
+    
+    private var buttonLabel: String {
+        switch selectedFeatureType {
+        case .area: return "Close Polygon"
+        case .point: return "Place Point"
+        default: return "Finish Drawing"
+        }
+    }
+    
+    private var canFinishDrawing: Bool {
+        guard isDrawing else { return false }
+        switch selectedFeatureType {
+        case .point: return currentPoints.count >= 1
+        case .area: return currentPoints.count >= 3
+        default: return currentPoints.count >= 2
         }
     }
 
@@ -38,24 +55,48 @@ struct DrawingControls: View {
     }
 
     private func finishDrawing() {
-        guard currentPoints.count >= 2 else { return }
+        // Validate minimum points based on feature type
+        switch selectedFeatureType {
+        case .point where currentPoints.count < 1: return
+        case .area where currentPoints.count < 3: return
+        case _ where currentPoints.count < 2: return
+        default: break
+        }
 
         let properties: [String: PropertyValue] = [
             "id": .string("\(selectedFeatureType.rawValue)-\(UUID().uuidString)"),
-            "name": .string("New \(selectedFeatureType.rawValue.capitalized)")
+            "name": .string("New \(selectedFeatureType.rawValue.capitalized)"),
+            "type": .string(selectedFeatureType.rawValue)
         ]
+
+        let geometry: GeoJSONGeometry
+        switch selectedFeatureType {
+        case .point:
+            geometry = GeoJSONGeometry(type: .point, coordinates: currentPoints[0])
+        case .area:
+            let finalPoints = closePolygon(currentPoints)
+            geometry = GeoJSONGeometry(type: .polygon, coordinates: [finalPoints])
+        default:
+            geometry = GeoJSONGeometry(type: .lineString, coordinates: currentPoints)
+        }
 
         let newFeature = GeoJSONFeature(
             properties: properties,
-            geometry: GeoJSONGeometry(
-                type: .lineString,
-                coordinates: currentPoints
-            )
+            geometry: geometry
         )
 
         layers.append(LayerState(feature: newFeature))
         currentPoints = []
         isDrawing = false
+    }
+
+    private func closePolygon(_ points: [[Double]]) -> [[Double]] {
+        var closedPoints = points
+        // If the polygon isn't already closed, close it by adding the first point at the end
+        if points.first != points.last {
+            closedPoints.append(points[0])
+        }
+        return closedPoints
     }
 
     private func deleteSelectedFeatures() {

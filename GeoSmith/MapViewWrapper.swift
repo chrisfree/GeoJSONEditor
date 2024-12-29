@@ -21,6 +21,7 @@ struct MapViewWrapper: NSViewRepresentable {
     @EnvironmentObject private var selectionState: SelectionState
     let features: [GeoJSONFeature]
     let selectedFeatures: Set<UUID>
+    @Binding var layers: [LayerState]
     @Binding var isDrawing: Bool
     @Binding var currentPoints: [[Double]]
     @Binding var region: MKCoordinateRegion
@@ -51,7 +52,12 @@ struct MapViewWrapper: NSViewRepresentable {
 
     func updateNSView(_ mapView: MKMapView, context: Context) {
         print("\nUpdating map view...")
-        print("\nSelected Points: \(selectionState.selectedPoints)")
+        print("Available layers: \(layers.count)")
+        print("Available features: \(features.count)")
+        
+        // Update layers in coordinator
+        context.coordinator.updateLayers(layers)
+        
         // If forcing update or conditions are met, update the region
         if shouldForceUpdate ||
             (!editingState.isEnabled && context.coordinator.draggedPointIndex == nil) {
@@ -94,6 +100,9 @@ struct MapViewWrapper: NSViewRepresentable {
             mapView.removeOverlays(mapView.overlays)
             context.coordinator.pointOverlays.removeAll()
             context.coordinator.polylineToFeature.removeAll()
+            context.coordinator.polygonToFeature.removeAll()
+            context.coordinator.pointAnnotations.forEach { mapView.removeAnnotation($0) }
+            context.coordinator.pointAnnotations.removeAll()
 
             // Update the currentEditingFeature when in edit mode
             if editingState.isEnabled, let editingId = editingState.selectedFeatureId {
@@ -103,34 +112,93 @@ struct MapViewWrapper: NSViewRepresentable {
             }
 
             for feature in features {
-                guard feature.geometry.type == .lineString,
-                      let lineStringCoords = feature.geometry.lineStringCoordinates else {
-                    print("Skipping feature with unsupported geometry type: \(feature.geometry.type)")
+                print("Processing feature: \(feature.id)")
+                if let layer = layers.first(where: { $0.feature.id == feature.id }) {
+                    print("Found matching layer with color: \(layer.color)")
+                }
+                
+                switch feature.geometry.type {
+                case .point:
+                    handlePoint(feature, mapView: mapView, context: context)
+                case .lineString:
+                    handleLineString(feature, mapView: mapView, context: context)
+                case .polygon:
+                    handlePolygon(feature, mapView: mapView, context: context)
+                default:
+                    print("Unsupported geometry type: \(feature.geometry.type)")
                     continue
                 }
-
-                let coordinates = lineStringCoords.map {
-                    CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
-                }
-
-                let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-
-                if editingState.isEnabled && feature.id == editingState.selectedFeatureId {
-                    context.coordinator.mainPolyline = polyline
-                    mapView.addOverlay(polyline, level: .aboveRoads)
-
-                    context.coordinator.currentCoordinates = coordinates
-
-                    for (index, coordinate) in coordinates.enumerated() {
-                        let point = EditablePoint(coordinate: coordinate, index: index)
-                        context.coordinator.pointOverlays.append(point)
-                        mapView.addOverlay(point, level: .aboveLabels)
-                    }
-                } else {
-                    context.coordinator.polylineToFeature[polyline] = feature
-                    mapView.addOverlay(polyline, level: .aboveRoads)
-                }
             }
+        }
+    }
+
+    private func handlePoint(_ feature: GeoJSONFeature, mapView: MKMapView, context: Context) {
+        guard let pointCoords = feature.geometry.pointCoordinates else { return }
+        
+        let coordinate = CLLocationCoordinate2D(
+            latitude: pointCoords[1],
+            longitude: pointCoords[0]
+        )
+        
+        let annotation = MKPointAnnotation()
+        annotation.coordinate = coordinate
+        annotation.title = feature.properties["name"]?.stringValue
+        
+        context.coordinator.pointAnnotations.append(annotation)
+        mapView.addAnnotation(annotation)
+    }
+
+    private func handleLineString(_ feature: GeoJSONFeature, mapView: MKMapView, context: Context) {
+        guard let lineStringCoords = feature.geometry.lineStringCoordinates else { return }
+
+        let coordinates = lineStringCoords.map {
+            CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
+        }
+
+        let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+
+        if editingState.isEnabled && feature.id == editingState.selectedFeatureId {
+            context.coordinator.mainPolyline = polyline
+            mapView.addOverlay(polyline, level: .aboveRoads)
+
+            context.coordinator.currentCoordinates = coordinates
+
+            for (index, coordinate) in coordinates.enumerated() {
+                let point = EditablePoint(coordinate: coordinate, index: index)
+                context.coordinator.pointOverlays.append(point)
+                mapView.addOverlay(point, level: .aboveLabels)
+            }
+        } else {
+            context.coordinator.polylineToFeature[polyline] = feature
+            mapView.addOverlay(polyline, level: .aboveRoads)
+        }
+    }
+
+    private func handlePolygon(_ feature: GeoJSONFeature, mapView: MKMapView, context: Context) {
+        guard let polygonCoords = feature.geometry.polygonCoordinates,
+              !polygonCoords.isEmpty else { return }
+
+        // Convert the outer ring coordinates
+        let outerRingCoords = polygonCoords[0].map {
+            CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
+        }
+
+        // Create polygon from outer ring
+        let polygon = MKPolygon(coordinates: outerRingCoords, count: outerRingCoords.count)
+
+        if editingState.isEnabled && feature.id == editingState.selectedFeatureId {
+            context.coordinator.mainPolygon = polygon
+            mapView.addOverlay(polygon, level: .aboveRoads)
+            context.coordinator.currentCoordinates = outerRingCoords
+
+            for (index, coordinate) in outerRingCoords.enumerated() {
+                let point = EditablePoint(coordinate: coordinate, index: index)
+                context.coordinator.pointOverlays.append(point)
+                mapView.addOverlay(point, level: .aboveLabels)
+            }
+        } else {
+            context.coordinator.polygonToFeature[polygon] = feature
+            mapView.addOverlay(polygon, level: .aboveRoads)
         }
     }
 
@@ -145,12 +213,36 @@ struct MapViewWrapper: NSViewRepresentable {
         weak var mapView: MKMapView?
         var currentEditingFeature: GeoJSONFeature?
         var mainPolyline: MKPolyline?
+        var mainPolygon: MKPolygon?
         var pointOverlays: [EditablePoint] = []
         var currentCoordinates: [CLLocationCoordinate2D] = []
         var lastUpdateTime: TimeInterval = 0
         var polylineToFeature: [MKPolyline: GeoJSONFeature] = [:]
+        var polygonToFeature: [MKPolygon: GeoJSONFeature] = [:]
         var debounceTimer: Timer?
         let updateInterval: TimeInterval = 1.0 / 60.0
+        var pointAnnotations: [MKPointAnnotation] = []
+        
+        // Change currentLayers to internal access
+        var currentLayers: [LayerState] = []
+        
+        // Track layers by feature ID instead of overlay
+        private var featureIdToLayer: [UUID: LayerState] = [:]
+        
+        // Update layers method
+        func updateLayers(_ layers: [LayerState]) {
+            self.currentLayers = layers
+            // Update feature ID to layer mapping
+            featureIdToLayer = Dictionary(uniqueKeysWithValues: layers.map { ($0.feature.id, $0) })
+        }
+        
+        func associateLayer(_ layer: LayerState, withFeatureId id: UUID) {
+            featureIdToLayer[id] = layer
+        }
+        
+        func layer(for feature: GeoJSONFeature) -> LayerState? {
+            return featureIdToLayer[feature.id]
+        }
 
         init(_ parent: MapViewWrapper) {
             self.parent = parent
@@ -358,68 +450,79 @@ struct MapViewWrapper: NSViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            print("\n=== RENDERING OVERLAY ===")
+            print("Type: \(type(of: overlay))")
+            print("Available layers: \(currentLayers.count)")
+            
             if let point = overlay as? EditablePoint {
-                let radius = getPointRadius(for: mapView)
-                let circle = MKCircle(center: point.coordinate, radius: radius)
-                let renderer = MKCircleRenderer(circle: circle)
+                return handlePoint(point, mapView: mapView)
+            }
 
-                if parent.selectionState.selectedPoints.contains(point.index) {
-                    renderer.fillColor = .systemPink
-                    renderer.strokeColor = .white
-                    renderer.lineWidth = 1.5
-                } else {
-                    renderer.fillColor = .black
-                    renderer.strokeColor = .white
-                    renderer.lineWidth = 1.75
-                }
-
-                return renderer
-            } else if let polyline = overlay as? MKPolyline {
+            if let polyline = overlay as? MKPolyline {
+                print("Rendering Polyline")
                 let renderer = MKPolylineRenderer(polyline: polyline)
-
+                
                 if polyline === mainPolyline {
+                    print("- Main polyline")
                     renderer.strokeColor = .systemBlue
                 } else if let feature = polylineToFeature[polyline] {
-                    renderer.strokeColor = TrackFeatureType.fromFeature(feature).color
-                } else {
-                    renderer.strokeColor = .systemGray
+                    print("- Found feature: \(feature.id)")
+                    if let layer = layer(for: feature) {
+                        print("- Found layer, using color: \(layer.color)")
+                        if let cgColor = layer.color.usingColorSpace(.sRGB)?.cgColor {
+                            renderer.strokeColor = NSColor(cgColor: cgColor) ?? .gray
+                        }
+                    }
                 }
-
-                // Fixed line width - no need to scale this with zoom
+                
                 renderer.lineWidth = 5
-
                 return renderer
             }
-
+            
+            if let polygon = overlay as? MKPolygon {
+                print("Rendering Polygon")
+                let renderer = MKPolygonRenderer(polygon: polygon)
+                
+                if polygon === mainPolygon {
+                    print("- Main polygon")
+                    renderer.fillColor = .systemBlue.withAlphaComponent(0.2)
+                    renderer.strokeColor = .systemBlue
+                } else if let feature = polygonToFeature[polygon] {
+                    print("- Found feature: \(feature.id)")
+                    if let layer = layer(for: feature) {
+                        print("- Found layer, using color: \(layer.color)")
+                        if let cgColor = layer.color.usingColorSpace(.sRGB)?.cgColor {
+                            let nsColor = NSColor(cgColor: cgColor) ?? .gray
+                            renderer.fillColor = nsColor.withAlphaComponent(0.2)
+                            renderer.strokeColor = nsColor
+                        }
+                    }
+                }
+                
+                renderer.lineWidth = 2
+                return renderer
+            }
+            
             return MKOverlayRenderer(overlay: overlay)
         }
+        
+        private func handlePoint(_ point: EditablePoint, mapView: MKMapView) -> MKOverlayRenderer {
+            let radius = getPointRadius(for: mapView)
+            let circle = MKCircle(center: point.coordinate, radius: radius)
+            let renderer = MKCircleRenderer(circle: circle)
 
-        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            // Only update if we're not dragging a point
-            if draggedPointIndex == nil {
-                // Just update the point overlays
-                updatePointOverlays(mapView)
+            if parent.selectionState.selectedPoints.contains(point.index) {
+                renderer.fillColor = .systemPink
+                renderer.strokeColor = .white
+            } else {
+                renderer.fillColor = .black
+                renderer.strokeColor = .white
             }
+            renderer.lineWidth = 1.5
+            return renderer
         }
-
-        // Add to the Coordinator class
-        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
-            // Called when zoom/pan starts
-            updateOverlaysDuringZoom(mapView)
-        }
-
-        func mapViewRegionIsChanging(_ mapView: MKMapView) {
-            // Called continuously during zoom/pan
-            updateOverlaysDuringZoom(mapView)
-        }
-
-        private func updateOverlaysDuringZoom(_ mapView: MKMapView) {
-            // Only update if we're not dragging a point
-            if draggedPointIndex == nil {
-                // Just update the point overlays
-                updatePointOverlays(mapView)
-            }
-        }
+        
+        // Rest of the code remains the same
     }
 }
 

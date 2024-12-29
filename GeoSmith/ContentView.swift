@@ -49,6 +49,7 @@ struct ContentView: View {
                 MapViewWrapper(
                     features: layers.filter { $0.isVisible }.map { $0.feature },
                     selectedFeatures: selectedFeatures,
+                    layers: $layers,
                     isDrawing: $isDrawing,
                     currentPoints: $currentPoints,
                     region: $mapRegion,
@@ -57,6 +58,12 @@ struct ContentView: View {
                     onPointSelected: handlePointSelection,
                     onPointMoved: handlePointMoved
                 )
+                .onAppear {
+                    print("MapViewWrapper appeared with \(layers.count) layers")
+                }
+                .onChange(of: layers) { newLayers in
+                    print("Layers changed: \(newLayers.count)")
+                }
 
                 // Recenter button overlay
                 Button(action: recenterMap) {
@@ -208,28 +215,15 @@ struct ContentView: View {
             return
         }
 
-        let visibleLayers = layers.filter { layer in
-            guard layer.isVisible,
-                  let coordinates = layer.lineStringCoordinates,
-                  !coordinates.isEmpty else {
-                return false
-            }
-            return true
-        }
-        
+        let visibleLayers = layers.filter { $0.isVisible }
         guard !visibleLayers.isEmpty else {
-            print("No visible layers with coordinates found")
+            print("No visible layers found")
             return
         }
 
         var bounds = MapBounds()
         for layer in visibleLayers {
-            guard let coordinates = layer.lineStringCoordinates else { continue }
-            for coordinate in coordinates {
-                guard coordinate.count >= 2,
-                      coordinate[1].isFinite && coordinate[0].isFinite else { continue }
-                bounds.extend(lat: coordinate[1], lon: coordinate[0])
-            }
+            bounds.extendWithGeometry(layer.feature.geometry)
         }
 
         guard bounds.isValid else {
@@ -248,25 +242,21 @@ struct ContentView: View {
             maxLon: bounds.maxLon + lonPadding
         )
 
-        // Calculate center point
         let centerLat = paddedBounds.center.lat
         let centerLon = paddedBounds.center.lon
 
-        // Calculate span
         let latSpan = max(paddedBounds.maxLat - paddedBounds.minLat, 0.001)
         let lonSpan = max(paddedBounds.maxLon - paddedBounds.minLon, 0.001)
 
         print("Calculated bounds: \(bounds)")
         print("Center: (\(centerLat), \(centerLon)), Span: (\(latSpan), \(lonSpan))")
 
-        // Force immediate update on main thread
         DispatchQueue.main.async {
             let newRegion = MKCoordinateRegion(
                 center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
                 span: MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)
             )
 
-            // Set a flag to force update
             self.shouldForceMapUpdate = true
             self.mapRegion = newRegion
 
@@ -343,9 +333,18 @@ struct ContentView: View {
                     print("Successfully decoded feature collection with \(featureCollection.features.count) features")
 
                     DispatchQueue.main.async {
+                        // Create layers with proper visualization
                         print("\nUpdating layers on main thread...")
-                        self.layers = featureCollection.features.map { LayerState(feature: $0) }
+                        self.layers = featureCollection.features.map { feature in
+                            print("Creating layer for feature: \(feature.id)")
+                            let layer = LayerState(feature: feature)
+                            print("Created layer with color: \(layer.color)")
+                            return layer
+                        }
                         print("Created \(self.layers.count) layer states")
+
+                        // Force the MapViewWrapper to update
+                        self.shouldForceMapUpdate = true
 
                         print("\nCalling recenterMap...")
                         self.recenterMap()

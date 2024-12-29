@@ -16,7 +16,7 @@ enum GeometryType: String, Codable {
 
 struct GeoJSONGeometry: Codable {
     var type: GeometryType
-    var coordinates: Any
+    private var _coordinates: Any
     
     enum CodingKeys: String, CodingKey {
         case coordinates, type
@@ -24,7 +24,7 @@ struct GeoJSONGeometry: Codable {
     
     init(type: GeometryType, coordinates: Any) {
         self.type = type
-        self.coordinates = coordinates
+        self._coordinates = coordinates
     }
     
     init(from decoder: Decoder) throws {
@@ -33,17 +33,17 @@ struct GeoJSONGeometry: Codable {
         
         switch type {
         case .point:
-            coordinates = try container.decode([Double].self, forKey: .coordinates)
+            _coordinates = try container.decode([Double].self, forKey: .coordinates)
         case .lineString:
-            coordinates = try container.decode([[Double]].self, forKey: .coordinates)
+            _coordinates = try container.decode([[Double]].self, forKey: .coordinates)
         case .polygon:
-            coordinates = try container.decode([[[Double]]].self, forKey: .coordinates)
+            _coordinates = try container.decode([[[Double]]].self, forKey: .coordinates)
         case .multiPoint:
-            coordinates = try container.decode([[Double]].self, forKey: .coordinates)
+            _coordinates = try container.decode([[Double]].self, forKey: .coordinates)
         case .multiLineString:
-            coordinates = try container.decode([[[Double]]].self, forKey: .coordinates)
+            _coordinates = try container.decode([[[Double]]].self, forKey: .coordinates)
         case .multiPolygon:
-            coordinates = try container.decode([[[[Double]]]].self, forKey: .coordinates)
+            _coordinates = try container.decode([[[[Double]]]].self, forKey: .coordinates)
         }
     }
     
@@ -53,47 +53,64 @@ struct GeoJSONGeometry: Codable {
         
         switch type {
         case .point:
-            try container.encode(coordinates as! [Double], forKey: .coordinates)
+            try container.encode(_coordinates as! [Double], forKey: .coordinates)
         case .lineString:
-            try container.encode(coordinates as! [[Double]], forKey: .coordinates)
+            try container.encode(_coordinates as! [[Double]], forKey: .coordinates)
         case .polygon:
-            try container.encode(coordinates as! [[[Double]]], forKey: .coordinates)
+            try container.encode(_coordinates as! [[[Double]]], forKey: .coordinates)
         case .multiPoint:
-            try container.encode(coordinates as! [[Double]], forKey: .coordinates)
+            try container.encode(_coordinates as! [[Double]], forKey: .coordinates)
         case .multiLineString:
-            try container.encode(coordinates as! [[[Double]]], forKey: .coordinates)
+            try container.encode(_coordinates as! [[[Double]]], forKey: .coordinates)
         case .multiPolygon:
-            try container.encode(coordinates as! [[[[Double]]]], forKey: .coordinates)
+            try container.encode(_coordinates as! [[[[Double]]]], forKey: .coordinates)
         }
     }
     
     var pointCoordinates: [Double]? {
         guard type == .point else { return nil }
-        return coordinates as? [Double]
+        return _coordinates as? [Double]
     }
     
     var lineStringCoordinates: [[Double]]? {
         guard type == .lineString else { return nil }
-        return coordinates as? [[Double]]
+        return _coordinates as? [[Double]]
     }
     
     var polygonCoordinates: [[[Double]]]? {
         guard type == .polygon else { return nil }
-        return coordinates as? [[[Double]]]
+        return _coordinates as? [[[Double]]]
     }
     
     var multiPointCoordinates: [[Double]]? {
         guard type == .multiPoint else { return nil }
-        return coordinates as? [[Double]]
+        return _coordinates as? [[Double]]
     }
     
     var multiLineStringCoordinates: [[[Double]]]? {
         guard type == .multiLineString else { return nil }
-        return coordinates as? [[[Double]]]
+        return _coordinates as? [[[Double]]]
     }
     
     var multiPolygonCoordinates: [[[[Double]]]]? {
         guard type == .multiPolygon else { return nil }
-        return coordinates as? [[[[Double]]]]
+        return _coordinates as? [[[[Double]]]]
+    }
+    
+    var coordinateCount: Int {
+        switch type {
+        case .point:
+            return 1
+        case .lineString:
+            return (lineStringCoordinates?.count ?? 0)
+        case .polygon:
+            return (polygonCoordinates?.first?.count ?? 0)
+        case .multiPoint:
+            return (multiPointCoordinates?.count ?? 0)
+        case .multiLineString:
+            return (multiLineStringCoordinates?.reduce(0) { $0 + $1.count } ?? 0)
+        case .multiPolygon:
+            return (multiPolygonCoordinates?.reduce(0) { $0 + $1[0].count } ?? 0)
+        }
     }
 }
