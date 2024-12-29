@@ -177,10 +177,9 @@ struct ContentView: View {
         ]
 
         let newFeature = GeoJSONFeature(
-            type: "Feature",
             properties: properties,
             geometry: GeoJSONGeometry(
-                type: "LineString",
+                type: .lineString,
                 coordinates: currentPoints
             )
         )
@@ -201,30 +200,34 @@ struct ContentView: View {
         selectedFeatures.removeAll()
     }
 
-    // Then in F1GeoJSONEditor, update the recenterMap function:
     private func recenterMap() {
         print("\n=== RECENTER MAP CALLED ===")
 
-        // Don't recenter if currently dragging a point
         guard !editingState.isDraggingPoint else {
             print("Skipping recenter due to active point drag")
             return
         }
 
-        // Only consider visible layers with coordinates
-        let visibleLayers = layers.filter { $0.isVisible && !$0.feature.geometry.coordinates.isEmpty }
+        let visibleLayers = layers.filter { layer in
+            guard layer.isVisible,
+                  let coordinates = layer.lineStringCoordinates,
+                  !coordinates.isEmpty else {
+                return false
+            }
+            return true
+        }
+        
         guard !visibleLayers.isEmpty else {
             print("No visible layers with coordinates found")
             return
         }
 
-        // Calculate bounds
         var bounds = MapBounds()
         for layer in visibleLayers {
-            for coordinate in layer.feature.geometry.coordinates {
+            guard let coordinates = layer.lineStringCoordinates else { continue }
+            for coordinate in coordinates {
                 guard coordinate.count >= 2,
                       coordinate[1].isFinite && coordinate[0].isFinite else { continue }
-
                 bounds.extend(lat: coordinate[1], lon: coordinate[0])
             }
         }
@@ -363,7 +366,6 @@ struct ContentView: View {
         }
     }
 
-    // In ContentView, keep only this version:
     private func handlePointMoved(index: Int, newCoordinate: CLLocationCoordinate2D) {
         guard let selectedId = editingState.selectedFeatureId,
               let layerIndex = layers.firstIndex(where: { $0.feature.id == selectedId }) else {
@@ -371,22 +373,17 @@ struct ContentView: View {
             return
         }
 
-        // Create new coordinates array
-        var newCoords = layers[layerIndex].feature.geometry.coordinates
-        guard index < newCoords.count else {
-            print("Invalid index for coordinates")
+        var layer = layers[layerIndex]
+        guard layer.feature.geometry.type == .lineString,
+              var coordinates = layer.feature.geometry.lineStringCoordinates,
+              index < coordinates.count else {
+            print("Invalid feature type or index")
             return
         }
 
-        // Update the coordinate
-        newCoords[index] = [newCoordinate.longitude, newCoordinate.latitude]
-
-        // Create updated feature
-        var updatedFeature = layers[layerIndex].feature
-        updatedFeature.geometry.coordinates = newCoords
-
-        // Update the layer
-        layers[layerIndex].feature = updatedFeature
+        coordinates[index] = [newCoordinate.longitude, newCoordinate.latitude]
+        layer.feature.geometry = GeoJSONGeometry(type: .lineString, coordinates: coordinates)
+        layers[layerIndex] = layer
 
         print("Updated coordinates for point \(index) in feature \(selectedId)")
     }
@@ -400,9 +397,9 @@ struct ContentView: View {
         if let originalCoordinates = editingState.modifiedCoordinates,
            let featureId = editingState.selectedFeatureId,
            let layerIndex = layers.firstIndex(where: { $0.feature.id == featureId }) {
-            var feature = layers[layerIndex].feature
-            feature.geometry.coordinates = originalCoordinates
-            layers[layerIndex].feature = feature
+            var layer = layers[layerIndex]
+            layer.feature.geometry = GeoJSONGeometry(type: .lineString, coordinates: originalCoordinates)
+            layers[layerIndex] = layer
         }
 
         editingState.selectedFeatureId = nil

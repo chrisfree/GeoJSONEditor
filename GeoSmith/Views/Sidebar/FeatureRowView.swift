@@ -22,13 +22,20 @@ struct FeatureRowView: View {
         DisclosureGroup(
             isExpanded: $isShowingPoints,
             content: {
-                FeaturePointsView(
-                    coordinates: layer.feature.geometry.coordinates,
-                    layerId: layer.id,
-                    editingState: $editingState,
-                    layers: $layers
-                )
-                .selectionDisabled()
+                if layer.feature.geometry.type == .lineString,
+                   let coordinates = layer.feature.geometry.lineStringCoordinates {
+                    FeaturePointsView(
+                        coordinates: coordinates,
+                        layerId: layer.id,
+                        editingState: $editingState,
+                        layers: $layers
+                    )
+                    .selectionDisabled()
+                } else {
+                    Text("Unsupported geometry type: \(layer.feature.geometry.type)")
+                        .foregroundStyle(.secondary)
+                        .padding()
+                }
             },
             label: {
                 HStack {

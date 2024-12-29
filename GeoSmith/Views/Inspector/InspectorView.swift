@@ -206,7 +206,19 @@ struct InspectorView: View {
                         HStack {
                             Text("Points")
                                 .frame(width: 100, alignment: .trailing)
-                            Text("\(feature.geometry.coordinates.count)")
+                            if feature.geometry.type == .lineString,
+                               let coordinates = feature.geometry.lineStringCoordinates {
+                                Text("\(coordinates.count)")
+                            } else {
+                                Text("N/A")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        
+                        HStack {
+                            Text("Type")
+                                .frame(width: 100, alignment: .trailing)
+                            Text(feature.geometry.type.rawValue)
                         }
                     }
                     .padding(.horizontal)

@@ -103,7 +103,13 @@ struct MapViewWrapper: NSViewRepresentable {
             }
 
             for feature in features {
-                let coordinates = feature.geometry.coordinates.map {
+                guard feature.geometry.type == .lineString,
+                      let lineStringCoords = feature.geometry.lineStringCoordinates else {
+                    print("Skipping feature with unsupported geometry type: \(feature.geometry.type)")
+                    continue
+                }
+
+                let coordinates = lineStringCoords.map {
                     CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
                 }
 
@@ -225,16 +231,19 @@ struct MapViewWrapper: NSViewRepresentable {
         private func setupBackgroundFeatures() {
             guard let mapView = self.mapView else { return }
 
-            // Clear existing features
             for (polyline, _) in polylineToFeature {
                 mapView.removeOverlay(polyline)
             }
             polylineToFeature.removeAll()
 
-            // Add non-editing features
             let backgroundFeatures = parent.features.filter { $0.id != parent.editingState.selectedFeatureId }
             for feature in backgroundFeatures {
-                let coordinates = feature.geometry.coordinates.map {
+                guard feature.geometry.type == .lineString,
+                      let lineStringCoords = feature.geometry.lineStringCoordinates else {
+                    continue
+                }
+
+                let coordinates = lineStringCoords.map {
                     CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
                 }
                 let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)

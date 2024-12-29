@@ -9,7 +9,7 @@ import Foundation
 
 struct GeoJSONFeature: Identifiable, Codable {
     var id: UUID
-    var type: String
+    let type: String = "Feature" // GeoJSON features always have type "Feature"
     var properties: [String: PropertyValue]
     var geometry: GeoJSONGeometry
 
@@ -17,16 +17,18 @@ struct GeoJSONFeature: Identifiable, Codable {
         case type, properties, geometry
     }
 
-    init(id: UUID = UUID(), type: String, properties: [String: PropertyValue], geometry: GeoJSONGeometry) {
+    init(id: UUID = UUID(), properties: [String: PropertyValue], geometry: GeoJSONGeometry) {
         self.id = id
-        self.type = type
         self.properties = properties
         self.geometry = geometry
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        type = try container.decode(String.self, forKey: .type)
+        let decodedType = try container.decode(String.self, forKey: .type)
+        guard decodedType == "Feature" else {
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Invalid feature type")
+        }
         properties = try container.decode([String: PropertyValue].self, forKey: .properties)
         geometry = try container.decode(GeoJSONGeometry.self, forKey: .geometry)
         id = UUID()

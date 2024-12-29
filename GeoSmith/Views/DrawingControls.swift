@@ -46,10 +46,9 @@ struct DrawingControls: View {
         ]
 
         let newFeature = GeoJSONFeature(
-            type: "Feature",
             properties: properties,
             geometry: GeoJSONGeometry(
-                type: "LineString",
+                type: .lineString,
                 coordinates: currentPoints
             )
         )
