@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9D8BB9E12D21EA81008AEBC7 /* GeoJSON in Frameworks */ = {isa = PBXBuildFile; productRef = 9D8BB9E02D21EA81008AEBC7 /* GeoJSON */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		8306B77A2CE8EFAE00FF9936 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +33,23 @@
 		8306B7832CE8EFAE00FF9936 /* GeoSmithUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeoSmithUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9D8BB9DE2D21EA10008AEBC7 /* Exceptions for "GeoSmith" folder in "GeoSmith" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"sample-1.geojson",
+				"Sample/sample-1.geojson",
+			);
+			target = 8306B7652CE8EFAD00FF9936 /* GeoSmith */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		8306B7682CE8EFAD00FF9936 /* GeoSmith */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9D8BB9DE2D21EA10008AEBC7 /* Exceptions for "GeoSmith" folder in "GeoSmith" target */,
+			);
 			path = GeoSmith;
 			sourceTree = "<group>";
 		};
@@ -52,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9D8BB9E12D21EA81008AEBC7 /* GeoJSON in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +131,7 @@
 			);
 			name = GeoSmith;
 			packageProductDependencies = (
+				9D8BB9E02D21EA81008AEBC7 /* GeoJSON */,
 			);
 			productName = geoJSONEditor;
 			productReference = 8306B7662CE8EFAD00FF9936 /* GeoSmith.app */;
@@ -195,6 +215,9 @@
 			);
 			mainGroup = 8306B75D2CE8EFAD00FF9936;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9D8BB9DF2D21EA81008AEBC7 /* XCRemoteSwiftPackageReference "GeoJSON" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8306B7672CE8EFAD00FF9936 /* Products */;
 			projectDirPath = "";
@@ -559,6 +582,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9D8BB9DF2D21EA81008AEBC7 /* XCRemoteSwiftPackageReference "GeoJSON" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kiliankoe/GeoJSON";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.6.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9D8BB9E02D21EA81008AEBC7 /* GeoJSON */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9D8BB9DF2D21EA81008AEBC7 /* XCRemoteSwiftPackageReference "GeoJSON" */;
+			productName = GeoJSON;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8306B75E2CE8EFAD00FF9936 /* Project object */;
 }
