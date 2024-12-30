@@ -29,9 +29,23 @@
 		8306B7832CE8EFAE00FF9936 /* GeoSmithUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeoSmithUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9D8BBA702D222974008AEBC7 /* Exceptions for "GeoSmith" folder in "GeoSmith" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"sample-1.geojson",
+				"Sample/sample-1.geojson",
+			);
+			target = 8306B7652CE8EFAD00FF9936 /* GeoSmith */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		8306B7682CE8EFAD00FF9936 /* GeoSmith */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9D8BBA702D222974008AEBC7 /* Exceptions for "GeoSmith" folder in "GeoSmith" target */,
+			);
 			path = GeoSmith;
 			sourceTree = "<group>";
 		};
