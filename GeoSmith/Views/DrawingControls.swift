@@ -45,13 +45,11 @@ struct DrawingControls: View {
             "name": .string("New \(selectedFeatureType.rawValue.capitalized)")
         ]
 
+        let geometry = GeoJSONGeometry(lineString: currentPoints)
+        
         let newFeature = GeoJSONFeature(
-            type: "Feature",
             properties: properties,
-            geometry: GeoJSONGeometry(
-                type: "LineString",
-                coordinates: currentPoints
-            )
+            geometry: geometry
         )
 
         layers.append(LayerState(feature: newFeature))

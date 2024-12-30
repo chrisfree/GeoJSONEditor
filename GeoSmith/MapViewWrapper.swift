@@ -16,11 +16,21 @@ import SwiftUI
 import MapKit
 import UniformTypeIdentifiers
 
+// MARK: - Map View Extension for Zoom Level
+extension MKMapView {
+    var zoomLevel: Double {
+        let span = self.region.span.longitudeDelta
+        let zoomLevel = log2(360.0 / span)
+        return min(max(zoomLevel, 0), 20)
+    }
+}
+
 // MARK: - Main View
 struct MapViewWrapper: NSViewRepresentable {
     @EnvironmentObject private var selectionState: SelectionState
     let features: [GeoJSONFeature]
     let selectedFeatures: Set<UUID>
+    @Binding var layers: [LayerState]
     @Binding var isDrawing: Bool
     @Binding var currentPoints: [[Double]]
     @Binding var region: MKCoordinateRegion
@@ -103,8 +113,12 @@ struct MapViewWrapper: NSViewRepresentable {
             }
 
             for feature in features {
-                let coordinates = feature.geometry.coordinates.map {
-                    CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
+                // Get coordinates using proper accessors
+                guard let geometry = feature.geometry,
+                      let lineStringCoords = geometry.lineStringCoordinates else { continue }
+                
+                let coordinates = lineStringCoords.map { coordinate -> CLLocationCoordinate2D in
+                    CLLocationCoordinate2D(latitude: coordinate[1], longitude: coordinate[0])
                 }
 
                 let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
@@ -112,7 +126,6 @@ struct MapViewWrapper: NSViewRepresentable {
                 if editingState.isEnabled && feature.id == editingState.selectedFeatureId {
                     context.coordinator.mainPolyline = polyline
                     mapView.addOverlay(polyline, level: .aboveRoads)
-
                     context.coordinator.currentCoordinates = coordinates
 
                     for (index, coordinate) in coordinates.enumerated() {
@@ -149,6 +162,20 @@ struct MapViewWrapper: NSViewRepresentable {
         init(_ parent: MapViewWrapper) {
             self.parent = parent
             super.init()
+        }
+
+        func updatePointOverlays(_ mapView: MKMapView) {
+            // Remove only existing point overlays
+            let existingPoints = pointOverlays
+            mapView.removeOverlays(existingPoints)
+            pointOverlays.removeAll()
+
+            // Add new point overlays
+            for (index, coordinate) in currentCoordinates.enumerated() {
+                let point = EditablePoint(coordinate: coordinate, index: index)
+                pointOverlays.append(point)
+                mapView.addOverlay(point, level: .aboveLabels)
+            }
         }
 
         @objc func handleClick(_ gesture: NSClickGestureRecognizer) {
@@ -190,77 +217,6 @@ struct MapViewWrapper: NSViewRepresentable {
             parent.onPointSelected(coordinate)
         }
 
-        private func updatePolylineCoordinates(_ newCoordinate: CLLocationCoordinate2D, at index: Int) {
-            guard let mapView = self.mapView else { return }
-
-            let currentTime = CACurrentMediaTime()
-            guard (currentTime - lastUpdateTime) >= updateInterval else { return }
-            lastUpdateTime = currentTime
-
-            currentCoordinates[index] = newCoordinate
-
-            debounceTimer?.invalidate()
-            debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
-                guard let self = self else { return }
-                self.parent.onPointMoved(index, newCoordinate)
-            }
-
-            if let oldPolyline = mainPolyline {
-                mapView.removeOverlay(oldPolyline)
-            }
-
-            let newPolyline = MKPolyline(coordinates: currentCoordinates, count: currentCoordinates.count)
-            mainPolyline = newPolyline
-
-            mapView.addOverlay(newPolyline, level: .aboveRoads)
-
-            if let point = pointOverlays[safe: index] {
-                mapView.removeOverlay(point)
-                let newPoint = EditablePoint(coordinate: newCoordinate, index: index)
-                pointOverlays[index] = newPoint
-                mapView.addOverlay(newPoint, level: .aboveLabels)
-            }
-        }
-
-        private func setupBackgroundFeatures() {
-            guard let mapView = self.mapView else { return }
-
-            // Clear existing features
-            for (polyline, _) in polylineToFeature {
-                mapView.removeOverlay(polyline)
-            }
-            polylineToFeature.removeAll()
-
-            // Add non-editing features
-            let backgroundFeatures = parent.features.filter { $0.id != parent.editingState.selectedFeatureId }
-            for feature in backgroundFeatures {
-                let coordinates = feature.geometry.coordinates.map {
-                    CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0])
-                }
-                let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-                polylineToFeature[polyline] = feature
-                mapView.addOverlay(polyline, level: .aboveRoads)
-            }
-        }
-
-        private func findClosestPoint(to location: CGPoint, in mapView: MKMapView) -> (Int, CLLocationCoordinate2D)? {
-            let pointsWithIndices = currentCoordinates.enumerated().map { ($0, $1) }
-            let closest = pointsWithIndices.min(by: { point1, point2 in
-                let point1Screen = mapView.convert(point1.1, toPointTo: mapView)
-                let point2Screen = mapView.convert(point2.1, toPointTo: mapView)
-                let distance1 = hypot(location.x - point1Screen.x, location.y - point1Screen.y)
-                let distance2 = hypot(location.x - point2Screen.x, location.y - point2Screen.y)
-                return distance1 < distance2
-            })
-
-            if let closest = closest {
-                let screenPoint = mapView.convert(closest.1, toPointTo: mapView)
-                let distance = hypot(location.x - screenPoint.x, location.y - screenPoint.y)
-                return distance <= 20 ? closest : nil
-            }
-            return nil
-        }
-        
         @objc func handleDrag(_ gesture: NSPanGestureRecognizer) {
             guard parent.editingState.isEnabled,
                   let mapView = gesture.view as? MKMapView else {
@@ -306,27 +262,87 @@ struct MapViewWrapper: NSViewRepresentable {
             }
         }
 
-        // Helper method to refresh point overlays
-        private func updatePointOverlays(_ mapView: MKMapView) {
-            // Remove only existing point overlays
-            let existingPoints = pointOverlays
-            mapView.removeOverlays(existingPoints)
-            pointOverlays.removeAll()
+        func updatePolylineCoordinates(_ newCoordinate: CLLocationCoordinate2D, at index: Int) {
+            guard let mapView = self.mapView else { return }
 
-            // Add new point overlays
-            for (index, coordinate) in currentCoordinates.enumerated() {
-                let point = EditablePoint(coordinate: coordinate, index: index)
-                pointOverlays.append(point)
-                mapView.addOverlay(point, level: .aboveLabels)
+            let currentTime = CACurrentMediaTime()
+            guard (currentTime - lastUpdateTime) >= updateInterval else { return }
+            lastUpdateTime = currentTime
+
+            currentCoordinates[index] = newCoordinate
+
+            debounceTimer?.invalidate()
+            debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
+                guard let self = self else { return }
+                self.parent.onPointMoved(index, newCoordinate)
+            }
+
+            if let oldPolyline = mainPolyline {
+                mapView.removeOverlay(oldPolyline)
+            }
+
+            let newPolyline = MKPolyline(coordinates: currentCoordinates, count: currentCoordinates.count)
+            mainPolyline = newPolyline
+
+            mapView.addOverlay(newPolyline, level: .aboveRoads)
+
+            if let point = pointOverlays[safe: index] {
+                mapView.removeOverlay(point)
+                let newPoint = EditablePoint(coordinate: newCoordinate, index: index)
+                pointOverlays[index] = newPoint
+                mapView.addOverlay(newPoint, level: .aboveLabels)
             }
         }
 
-        private func getCurrentZoomLevel(_ mapView: MKMapView) -> Double {
+        func setupBackgroundFeatures() {
+            guard let mapView = self.mapView else { return }
+
+            // Clear existing features
+            for (polyline, _) in polylineToFeature {
+                mapView.removeOverlay(polyline)
+            }
+            polylineToFeature.removeAll()
+
+            // Add non-editing features
+            let backgroundFeatures = parent.features.filter { $0.id != parent.editingState.selectedFeatureId }
+            for feature in backgroundFeatures {
+                guard let geometry = feature.geometry,
+                      let lineStringCoords = geometry.lineStringCoordinates else { continue }
+                
+                let coordinates = lineStringCoords.map { coordinate -> CLLocationCoordinate2D in
+                    CLLocationCoordinate2D(latitude: coordinate[1], longitude: coordinate[0])
+                }
+                
+                let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+                polylineToFeature[polyline] = feature
+                mapView.addOverlay(polyline, level: .aboveRoads)
+            }
+        }
+
+        func findClosestPoint(to location: CGPoint, in mapView: MKMapView) -> (Int, CLLocationCoordinate2D)? {
+            let pointsWithIndices = currentCoordinates.enumerated().map { ($0, $1) }
+            let closest = pointsWithIndices.min(by: { point1, point2 in
+                let point1Screen = mapView.convert(point1.1, toPointTo: mapView)
+                let point2Screen = mapView.convert(point2.1, toPointTo: mapView)
+                let distance1 = hypot(location.x - point1Screen.x, location.y - point1Screen.y)
+                let distance2 = hypot(location.x - point2Screen.x, location.y - point2Screen.y)
+                return distance1 < distance2
+            })
+
+            if let closest = closest {
+                let screenPoint = mapView.convert(closest.1, toPointTo: mapView)
+                let distance = hypot(location.x - screenPoint.x, location.y - screenPoint.y)
+                return distance <= 20 ? closest : nil
+            }
+            return nil
+        }
+        
+        func getCurrentZoomLevel(_ mapView: MKMapView) -> Double {
             // Calculate zoom level based on latitude span
             return log2(360 * ((Double(mapView.frame.width) / 256) / mapView.region.span.latitudeDelta)) + 1
         }
 
-        private func getPointRadius(for mapView: MKMapView) -> CLLocationDistance {
+        func getPointRadius(for mapView: MKMapView) -> CLLocationDistance {
             let zoomLevel = mapView.zoomLevel
 
             // Start with a small base radius in meters
@@ -339,13 +355,20 @@ struct MapViewWrapper: NSViewRepresentable {
             return min(max(baseRadius * scaleFactor, 2), 15)
         }
 
-        private func getLineWidth(for zoomLevel: Double) -> CGFloat {
+        func getLineWidth(for zoomLevel: Double) -> CGFloat {
             // Base width is 5 points
             let baseWidth: CGFloat = 5.0
             // Scale factor decreases as zoom level increases
             let scaleFactor = max(1.0, 15.0 / pow(2, zoomLevel - 10))
             // Clamp the final width between 2 and 15 points
             return min(max(baseWidth * scaleFactor, 2), 15)
+        }
+
+        func updateOverlaysDuringZoom(_ mapView: MKMapView) {
+            // Only update if we're not dragging a point
+            if draggedPointIndex == nil {
+                updatePointOverlays(mapView)
+            }
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -393,7 +416,6 @@ struct MapViewWrapper: NSViewRepresentable {
             }
         }
 
-        // Add to the Coordinator class
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
             // Called when zoom/pan starts
             updateOverlaysDuringZoom(mapView)
@@ -403,21 +425,5 @@ struct MapViewWrapper: NSViewRepresentable {
             // Called continuously during zoom/pan
             updateOverlaysDuringZoom(mapView)
         }
-
-        private func updateOverlaysDuringZoom(_ mapView: MKMapView) {
-            // Only update if we're not dragging a point
-            if draggedPointIndex == nil {
-                // Just update the point overlays
-                updatePointOverlays(mapView)
-            }
-        }
-    }
-}
-
-extension MKMapView {
-    var zoomLevel: Double {
-        let span = self.region.span.longitudeDelta
-        let zoomLevel = log2(360.0 / span)
-        return min(max(zoomLevel, 0), 20)
     }
 }

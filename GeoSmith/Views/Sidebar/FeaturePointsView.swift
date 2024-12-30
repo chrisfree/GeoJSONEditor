@@ -84,26 +84,23 @@ struct FeaturePointsView: View {
         guard !selectionState.selectedPoints.isEmpty else { return }
 
         // Find the current layer
-        guard let currentLayer = layers.first(where: { $0.id == layerId }) else { return }
+        guard let currentLayer = layers.first(where: { $0.id == layerId }),
+              let geometry = currentLayer.feature.geometry else { return }
 
         // Create new coordinates array with only selected points in selection order
         let selectedCoordinates = selectionState.selectedPoints.compactMap { index in
             coordinates[safe: index]
         }
 
-        // Create new feature properties, copying the original but updating the name
-        var newProperties = currentLayer.feature.properties
-        newProperties["name"] = PropertyValue.string("Unnamed segment")
+        // Create new feature properties
+        var newProperties = currentLayer.feature.properties ?? [:]
+        newProperties["name"] = .string("Unnamed segment")
 
         // Create new geometry with duplicated points
-        let newGeometry = GeoJSONGeometry(
-            type: currentLayer.feature.geometry.type,
-            coordinates: selectedCoordinates
-        )
+        let newGeometry = GeoJSONGeometry(lineString: selectedCoordinates)
 
         // Create new feature with duplicated points
         let newFeature = GeoJSONFeature(
-            type: currentLayer.feature.type,
             properties: newProperties,
             geometry: newGeometry
         )
@@ -136,40 +133,50 @@ struct FeaturePointsView: View {
         guard !selectionState.selectedPoints.isEmpty else { return }
 
         // Find the current layer
-        guard let currentLayerIndex = layers.firstIndex(where: { $0.id == layerId }) else { return }
+        guard let currentLayerIndex = layers.firstIndex(where: { $0.id == layerId }),
+              let geometry = layers[currentLayerIndex].feature.geometry,
+              let coordinates = geometry.lineStringCoordinates,
+              coordinates.count > 1 else { return }
 
         // Get the selected point index
         guard let selectedPointIndex = selectionState.selectedPoints.first else { return }
 
-        // Ensure we don't delete the last point
-        if layers[currentLayerIndex].feature.geometry.coordinates.count > 1 {
-            // Remove the point at the selected index
-            layers[currentLayerIndex].feature.geometry.coordinates.remove(at: selectedPointIndex)
+        // Create new coordinates array without the selected point
+        var newCoords = coordinates
+        newCoords.remove(at: selectedPointIndex)
 
-            // Clear selection after deletion
-            selectionState.clearPointSelection()
-        }
+        // Update feature with new geometry
+        var updatedFeature = layers[currentLayerIndex].feature
+        updatedFeature.geometry = GeoJSONGeometry(lineString: newCoords)
+        layers[currentLayerIndex].feature = updatedFeature
+
+        // Clear selection after deletion
+        selectionState.clearPointSelection()
     }
 
     private func insertPoint() {
         guard !selectionState.selectedPoints.isEmpty else { return }
 
         // Find the current layer
-        guard let currentLayerIndex = layers.firstIndex(where: { $0.id == layerId }) else { return }
+        guard let currentLayerIndex = layers.firstIndex(where: { $0.id == layerId }),
+              let geometry = layers[currentLayerIndex].feature.geometry,
+              let coordinates = geometry.lineStringCoordinates else { return }
 
         // Get the selected point index
         guard let selectedPointIndex = selectionState.selectedPoints.first else { return }
 
         // Get insertion index (inserting after the selected point)
-        let insertionIndex = min(selectedPointIndex + 1, layers[currentLayerIndex].feature.geometry.coordinates.count)
+        let insertionIndex = min(selectedPointIndex + 1, coordinates.count)
 
-        let pointA = layers[currentLayerIndex].feature.geometry.coordinates[selectedPointIndex]
+        // Get coordinates for calculation
+        guard let pointA = coordinates[safe: selectedPointIndex],
+              let pointB = coordinates[safe: insertionIndex] else { return }
+
         let insertAfterCoordinate = CLLocationCoordinate2D(
             latitude: pointA[1],
             longitude: pointA[0]
         )
 
-        let pointB = layers[currentLayerIndex].feature.geometry.coordinates[insertionIndex]
         let insertBeforeCoordinate = CLLocationCoordinate2D(
             latitude: pointB[1],
             longitude: pointB[0]
@@ -182,49 +189,36 @@ struct FeaturePointsView: View {
         )
 
         // Insert the point
-        insertPoint(
-            coordinate: newCoordinate,
-            at: insertionIndex,
-            into: &layers[currentLayerIndex].feature
-        )
+        var newCoords = coordinates
+        newCoords.insert([newCoordinate.longitude, newCoordinate.latitude], at: insertionIndex)
+
+        // Update feature with new geometry
+        var updatedFeature = layers[currentLayerIndex].feature
+        updatedFeature.geometry = GeoJSONGeometry(lineString: newCoords)
+        layers[currentLayerIndex].feature = updatedFeature
 
         // Clear selection after insertion
         selectionState.clearPointSelection()
-    }
-
-    private func insertPoint(coordinate: CLLocationCoordinate2D, at index: Int, into feature: inout GeoJSONFeature) {
-        // Ensure the index is valid
-        guard index >= 0 && index <= feature.geometry.coordinates.count else {
-            print("Invalid index for insertion")
-            return
-        }
-
-        // Convert CLLocationCoordinate2D to [Double] format (longitude, latitude)
-        let coordinateArray = [coordinate.longitude, coordinate.latitude]
-
-        // Validate geometry type
-        guard feature.geometry.type == "LineString" else {
-            print("Unsupported geometry type: \(feature.geometry.type)")
-            return
-        }
-
-        // Insert the coordinate array at the specified index
-        feature.geometry.coordinates.insert(coordinateArray, at: index)
     }
 
     private func enterEditMode(forPoint index: Int) {
         editingState.isEnabled = true
         editingState.selectedFeatureId = layerId
         selectionState.selectPoint(index, mode: .single)
-
-        if let layerIndex = layers.firstIndex(where: { $0.id == layerId }) {
-            editingState.modifiedCoordinates = layers[layerIndex].feature.geometry.coordinates
+        
+        // Store modified coordinates
+        if let layerIndex = layers.firstIndex(where: { $0.id == layerId }),
+           let feature = layers[layerIndex].feature as? GeoJSONFeature,
+           let geometry = feature.geometry,
+           let lineStringCoords = geometry.lineStringCoordinates {
+            editingState.modifiedCoordinates = lineStringCoords
         }
-
+        
+        // Animation section remains the same
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
             isPointAnimating = true
         }
-
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             isPointAnimating = false
         }

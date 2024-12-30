@@ -18,17 +18,34 @@ struct FeatureRowView: View {
     @State private var isShowingPoints: Bool = false
     @FocusState private var isTextFieldFocused: Bool
 
+    private var featureName: String {
+        guard let properties = layer.feature.properties else {
+            return "Unnamed Feature"
+        }
+        
+        if let name = properties["name"]?.stringValue {
+            return name
+        }
+        if let name = properties["Name"]?.stringValue {
+            return name
+        }
+        return "Unnamed Feature"
+    }
+    
     var body: some View {
         DisclosureGroup(
             isExpanded: $isShowingPoints,
             content: {
-                FeaturePointsView(
-                    coordinates: layer.feature.geometry.coordinates,
-                    layerId: layer.id,
-                    editingState: $editingState,
-                    layers: $layers
-                )
-                .selectionDisabled()
+                if let geometry = layer.feature.geometry,
+                   let coordinates = geometry.lineStringCoordinates {
+                    FeaturePointsView(
+                        coordinates: coordinates,
+                        layerId: layer.id,
+                        editingState: $editingState,
+                        layers: $layers
+                    )
+                    .selectionDisabled()
+                }
             },
             label: {
                 HStack {
@@ -49,13 +66,9 @@ struct FeatureRowView: View {
                                 isEditingName = false
                             }
                     } else {
-                        Text(layer.feature.properties["name"]?.stringValue ??
-                             layer.feature.properties["Name"]?.stringValue ??
-                             "Unnamed Feature")
+                        Text(featureName)
                             .onTapGesture(count: 2) { // Handle double click/tap
-                                editedName = layer.feature.properties["name"]?.stringValue ??
-                                layer.feature.properties["Name"]?.stringValue ??
-                                "Unnamed Feature"
+                                editedName = featureName
                                 isEditingName = true
                                 // Delay focus to ensure view is ready
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -139,9 +152,7 @@ struct FeatureRowView: View {
 
     private func duplicateFeature() {
         // Get the current name of the feature
-        let currentName = layer.feature.properties["name"]?.stringValue ??
-        layer.feature.properties["Name"]?.stringValue ??
-        "Unnamed Feature"
+        let currentName = featureName
 
         // Create a copy of the feature
         var duplicatedFeature = layer.feature
@@ -150,7 +161,7 @@ struct FeatureRowView: View {
         duplicatedFeature.id = UUID()
 
         // Update properties with new name
-        var newProperties = duplicatedFeature.properties
+        var newProperties = duplicatedFeature.properties ?? [:]
         newProperties["name"] = .string("\(currentName) copy")
         duplicatedFeature.properties = newProperties
 
@@ -177,7 +188,7 @@ struct FeatureRowView: View {
     private func updateFeatureName(_ newName: String) {
         if let index = layers.firstIndex(where: { $0.id == layer.id }) {
             var updatedFeature = layers[index].feature
-            var properties = updatedFeature.properties
+            var properties = updatedFeature.properties ?? [:]
             properties["name"] = .string(newName)
             updatedFeature.properties = properties
             layers[index].feature = updatedFeature
