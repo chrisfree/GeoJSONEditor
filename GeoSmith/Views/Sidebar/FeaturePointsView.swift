@@ -15,56 +15,44 @@ struct FeaturePointsView: View {
     @Binding var layers: [LayerState]
     @State private var isPointAnimating: Bool = false
 
-    // Add computed property to get coordinates based on geometry type
+    // Updated featureCoordinates property to handle all geometry types
     private var featureCoordinates: [[Double]] {
-        guard let feature = layers.first(where: { $0.id == layerId })?.feature,
-              let geometry = feature.geometry else { return [] }
+        guard let layer = layers.first(where: { $0.id == layerId }),
+              let geometry = layer.feature.geometry else { return [] }
         
         switch geometry.type {
         case .point:
             if let point = geometry.pointCoordinates {
                 return [point]
             }
-            
         case .multiPoint:
             return geometry.multiPointCoordinates ?? []
-            
         case .lineString:
             return geometry.lineStringCoordinates ?? []
-            
         case .multiLineString:
-            if let multiLine = geometry.multiLineStringCoordinates {
-                // Flatten first linestring for now
-                return multiLine.first ?? []
-            }
-            
+            // Flatten all linestrings into a single array of points
+            return geometry.multiLineStringCoordinates?.flatMap { $0 } ?? []
         case .polygon:
-            if let polygon = geometry.polygonCoordinates {
-                // Show exterior ring points
-                return polygon[0]
+            // Flatten only the exterior ring points
+            if let polygon = geometry.polygonCoordinates, !polygon.isEmpty {
+                return polygon[0] // Return exterior ring points
             }
-            
         case .multiPolygon:
-            if let multiPolygon = geometry.multiPolygonCoordinates {
-                // Show first polygon's exterior ring
-                return multiPolygon[0][0]
+            // Return first polygon's exterior ring points
+            if let multiPolygon = geometry.multiPolygonCoordinates,
+               !multiPolygon.isEmpty,
+               !multiPolygon[0].isEmpty {
+                return multiPolygon[0][0] // First polygon's exterior ring
             }
-            
         case .geometryCollection:
-            // For now, try to get coordinates from first geometry
-            if let geometries = geometry.geometryCollectionGeometries,
-               let firstGeometry = geometries.first {
-                let dummyFeature = GeoJSONFeature(properties: nil, geometry: firstGeometry)
-                return featureCoordinates(for: dummyFeature)
+            if let firstGeometry = geometry.geometryCollectionGeometries?.first {
+                return getCoordinates(from: firstGeometry)
             }
         }
-        
         return []
     }
     
-    private func featureCoordinates(for feature: GeoJSONFeature) -> [[Double]] {
-        guard let geometry = feature.geometry else { return [] }
-        
+    private func getCoordinates(from geometry: GeoJSONGeometry) -> [[Double]] {
         switch geometry.type {
         case .point:
             if let point = geometry.pointCoordinates {
@@ -74,10 +62,23 @@ struct FeaturePointsView: View {
             return geometry.multiPointCoordinates ?? []
         case .lineString:
             return geometry.lineStringCoordinates ?? []
-        default:
-            return []
+        case .multiLineString:
+            return geometry.multiLineStringCoordinates?.flatMap { $0 } ?? []
+        case .polygon:
+            if let polygon = geometry.polygonCoordinates, !polygon.isEmpty {
+                return polygon[0]
+            }
+        case .multiPolygon:
+            if let multiPolygon = geometry.multiPolygonCoordinates,
+               !multiPolygon.isEmpty,
+               !multiPolygon[0].isEmpty {
+                return multiPolygon[0][0]
+            }
+        case .geometryCollection:
+            if let first = geometry.geometryCollectionGeometries?.first {
+                return getCoordinates(from: first)
+            }
         }
-        
         return []
     }
     

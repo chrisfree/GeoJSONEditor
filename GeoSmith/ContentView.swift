@@ -40,7 +40,9 @@ struct ContentView: View {
                 editingState: $editingState,
                 selectedFeatureType: $selectedFeatureType,
                 isDrawing: $isDrawing,
-                currentPoints: $currentPoints
+                currentPoints: $currentPoints,
+                region: $mapRegion,
+                shouldForceUpdate: $shouldForceUpdate
             )
             .frame(minWidth: 200, idealWidth: 200, maxWidth: 350)
 
@@ -333,27 +335,63 @@ struct ContentView: View {
         openPanel.allowsMultipleSelection = false
 
         openPanel.begin { response in
-            print("Open panel completed with response: \(response == .OK ? "OK" : "Cancel")")
-
             if response == .OK, let url = openPanel.url {
-                print("Selected file: \(url.lastPathComponent)")
-
                 do {
                     let data = try Data(contentsOf: url)
-                    print("File data loaded, size: \(data.count) bytes")
-
                     let decoder = JSONDecoder()
                     let featureCollection = try decoder.decode(GeoJSONFeatureCollection.self, from: data)
-                    print("Successfully decoded feature collection with \(featureCollection.features.count) features")
 
                     DispatchQueue.main.async {
-                        print("\nUpdating layers on main thread...")
+                        // Update layers first
                         self.layers = featureCollection.features.map { LayerState(feature: $0) }
-                        print("Created \(self.layers.count) layer states")
-
-                        print("\nCalling recenterMap...")
-                        self.recenterMap()
-                        print("recenterMap called")
+                        
+                        // Calculate bounds for all features
+                        var allCoordinates: [[Double]] = []
+                        for feature in featureCollection.features {
+                            if let geometry = feature.geometry {
+                                let coords = self.getCoordinates(from: geometry)
+                                allCoordinates.append(contentsOf: coords)
+                            }
+                        }
+                        
+                        guard !allCoordinates.isEmpty else {
+                            print("No coordinates found in imported features")
+                            return
+                        }
+                        
+                        print("Processing \(allCoordinates.count) total coordinates")
+                        
+                        // Calculate bounds
+                        let lats = allCoordinates.map { $0[1] }
+                        let lons = allCoordinates.map { $0[0] }
+                        
+                        let minLat = lats.min()!
+                        let maxLat = lats.max()!
+                        let minLon = lons.min()!
+                        let maxLon = lons.max()!
+                        
+                        print("Total bounds - Lat: [\(minLat), \(maxLat)], Lon: [\(minLon), \(maxLon)]")
+                        
+                        // Add padding for better visibility
+                        let paddingFactor = 0.1 // 10% padding
+                        
+                        let latSpan = max(maxLat - minLat, 0.01)
+                        let lonSpan = max(maxLon - minLon, 0.01)
+                        
+                        let center = CLLocationCoordinate2D(
+                            latitude: (minLat + maxLat) / 2,
+                            longitude: (minLon + maxLon) / 2
+                        )
+                        
+                        let span = MKCoordinateSpan(
+                            latitudeDelta: latSpan * (1 + paddingFactor),
+                            longitudeDelta: lonSpan * (1 + paddingFactor)
+                        )
+                        
+                        print("Setting initial region - center: \(center), span: \(span)")
+                        
+                        self.mapRegion = MKCoordinateRegion(center: center, span: span)
+                        self.shouldForceUpdate = true
 
                         self.lastImportedURL = url
                         self.alertMessage = "Successfully loaded \(self.layers.count) features"
@@ -368,6 +406,30 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private func getCoordinates(from geometry: GeoJSONGeometry) -> [[Double]] {
+        switch geometry.type {
+        case .point:
+            if let point = geometry.pointCoordinates {
+                return [point]
+            }
+        case .multiPoint:
+            return geometry.multiPointCoordinates ?? []
+        case .lineString:
+            return geometry.lineStringCoordinates ?? []
+        case .multiLineString:
+            return geometry.multiLineStringCoordinates?.flatMap { $0 } ?? []
+        case .polygon:
+            return geometry.polygonCoordinates?.flatMap { $0 } ?? []
+        case .multiPolygon:
+            return geometry.multiPolygonCoordinates?.flatMap { $0.flatMap { $0 } } ?? []
+        case .geometryCollection:
+            if let first = geometry.geometryCollectionGeometries?.first {
+                return getCoordinates(from: first)
+            }
+        }
+        return []
     }
 
     private func handlePointMoved(index: Int, newCoordinate: CLLocationCoordinate2D) {

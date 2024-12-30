@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MapKit
 
 struct FeatureSidebarView: View {
     @EnvironmentObject private var selectionState: SelectionState
@@ -15,13 +16,17 @@ struct FeatureSidebarView: View {
     @Binding var selectedFeatureType: TrackFeatureType
     @Binding var isDrawing: Bool
     @Binding var currentPoints: [[Double]]
+    @Binding var region: MKCoordinateRegion
+    @Binding var shouldForceUpdate: Bool
 
     var body: some View {
         VStack {
             FeatureListView(
                 selectedFeatures: $selectedFeatures,
                 layers: $layers,
-                editingState: $editingState
+                editingState: $editingState,
+                region: $region,
+                shouldForceUpdate: $shouldForceUpdate
             )
 
             Divider()
