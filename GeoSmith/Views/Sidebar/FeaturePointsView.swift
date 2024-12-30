@@ -10,18 +10,83 @@ import MapKit
 
 struct FeaturePointsView: View {
     @EnvironmentObject private var selectionState: SelectionState
-    let coordinates: [[Double]]
     let layerId: UUID
     @Binding var editingState: EditingState
     @Binding var layers: [LayerState]
     @State private var isPointAnimating: Bool = false
 
+    // Add computed property to get coordinates based on geometry type
+    private var featureCoordinates: [[Double]] {
+        guard let feature = layers.first(where: { $0.id == layerId })?.feature,
+              let geometry = feature.geometry else { return [] }
+        
+        switch geometry.type {
+        case .point:
+            if let point = geometry.pointCoordinates {
+                return [point]
+            }
+            
+        case .multiPoint:
+            return geometry.multiPointCoordinates ?? []
+            
+        case .lineString:
+            return geometry.lineStringCoordinates ?? []
+            
+        case .multiLineString:
+            if let multiLine = geometry.multiLineStringCoordinates {
+                // Flatten first linestring for now
+                return multiLine.first ?? []
+            }
+            
+        case .polygon:
+            if let polygon = geometry.polygonCoordinates {
+                // Show exterior ring points
+                return polygon[0]
+            }
+            
+        case .multiPolygon:
+            if let multiPolygon = geometry.multiPolygonCoordinates {
+                // Show first polygon's exterior ring
+                return multiPolygon[0][0]
+            }
+            
+        case .geometryCollection:
+            // For now, try to get coordinates from first geometry
+            if let geometries = geometry.geometryCollectionGeometries,
+               let firstGeometry = geometries.first {
+                let dummyFeature = GeoJSONFeature(properties: nil, geometry: firstGeometry)
+                return featureCoordinates(for: dummyFeature)
+            }
+        }
+        
+        return []
+    }
+    
+    private func featureCoordinates(for feature: GeoJSONFeature) -> [[Double]] {
+        guard let geometry = feature.geometry else { return [] }
+        
+        switch geometry.type {
+        case .point:
+            if let point = geometry.pointCoordinates {
+                return [point]
+            }
+        case .multiPoint:
+            return geometry.multiPointCoordinates ?? []
+        case .lineString:
+            return geometry.lineStringCoordinates ?? []
+        default:
+            return []
+        }
+        
+        return []
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(coordinates.indices, id: \.self) { index in
+            ForEach(featureCoordinates.indices, id: \.self) { index in
                 PointRowView(
                     index: index,
-                    coordinate: coordinates[index],
+                    coordinate: featureCoordinates[index],
                     isSelected: selectionState.selectedPoints.contains(index),
                     isAnimating: isPointAnimating && selectionState.selectedPoints.contains(index)
                 )
@@ -89,7 +154,7 @@ struct FeaturePointsView: View {
 
         // Create new coordinates array with only selected points in selection order
         let selectedCoordinates = selectionState.selectedPoints.compactMap { index in
-            coordinates[safe: index]
+            featureCoordinates[safe: index]
         }
 
         // Create new feature properties

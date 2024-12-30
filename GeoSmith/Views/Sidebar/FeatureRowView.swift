@@ -39,7 +39,6 @@ struct FeatureRowView: View {
                 if let geometry = layer.feature.geometry,
                    let coordinates = geometry.lineStringCoordinates {
                     FeaturePointsView(
-                        coordinates: coordinates,
                         layerId: layer.id,
                         editingState: $editingState,
                         layers: $layers
