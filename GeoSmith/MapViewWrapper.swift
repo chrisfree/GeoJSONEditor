@@ -104,6 +104,9 @@ struct MapViewWrapper: NSViewRepresentable {
     func updateNSView(_ mapView: MKMapView, context: Context) {
         print("\nUpdating map view...")
         
+        // Force updateNSView is called whenever the view needs to be updated
+        // This can happen when the view is first loaded, or when the view's state changes
+        
         // Force update handling
         if shouldForceUpdate {
             print("Force updating map region to: \(region)")
@@ -347,54 +350,73 @@ struct MapViewWrapper: NSViewRepresentable {
             if index < currentCoordinates.count {
                 currentCoordinates[index] = newCoordinate
                 
-                // For polygons, ensure closure
-                if let geometry = editingFeature.geometry,
-                   geometry.type == .polygon,
-                   (index == 0 || index == currentCoordinates.count - 1) {
-                    let lastIndex = currentCoordinates.count - 1
-                    currentCoordinates[0] = newCoordinate
-                    currentCoordinates[lastIndex] = newCoordinate
+                // Separate handling for polygons and linestrings
+                if let geometry = editingFeature.geometry {
+                    switch geometry.type {
+                    case .polygon:
+                        // For polygons, ensure closure
+                        if index == 0 || index == currentCoordinates.count - 1 {
+                            let lastIndex = currentCoordinates.count - 1
+                            currentCoordinates[0] = newCoordinate
+                            currentCoordinates[lastIndex] = newCoordinate
+                        }
+                        
+                        // Update layer state to persist changes
+                        if let newGeometry = updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
+                           let layerIndex = parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
+                            var updatedLayer = parent.layers[layerIndex]
+                            let updatedFeature = GeoJSONFeature(
+                                id: editingFeature.id,
+                                properties: editingFeature.properties,
+                                geometry: newGeometry
+                            )
+                            updatedLayer.feature = updatedFeature
+                            parent.layers[layerIndex] = updatedLayer
+                            
+                            // Update visual representation
+                            mapView.removeOverlays(mapView.overlays.filter { $0 is MKPolygon })
+                            let newPolygon = MKPolygon(coordinates: currentCoordinates, count: currentCoordinates.count)
+                            mapView.addOverlay(newPolygon, level: .aboveRoads)
+                        }
+                        
+                    case .lineString:
+                        // For linestrings, update both visual and state
+                        if let existingPolyline = mainPolyline {
+                            mapView.removeOverlay(existingPolyline)
+                            let newPolyline = MKPolyline(coordinates: currentCoordinates, count: currentCoordinates.count)
+                            mainPolyline = newPolyline
+                            mapView.addOverlay(newPolyline, level: .aboveRoads)
+                            
+                            // Update layer state
+                            if let newGeometry = updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
+                               let layerIndex = parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
+                                var updatedLayer = parent.layers[layerIndex]
+                                updatedLayer.feature = GeoJSONFeature(
+                                    id: editingFeature.id,
+                                    properties: editingFeature.properties,
+                                    geometry: newGeometry
+                                )
+                                parent.layers[layerIndex] = updatedLayer
+                            }
+                        }
+                        
+                    default:
+                        break
+                    }
                 }
                 
                 // Cache the current state
                 parent.editingState.modifiedCoordinates = currentCoordinates.map { coord in
                     [coord.longitude, coord.latitude]
                 }
-            }
-            
-            // Update the geometry
-            if let newGeometry = updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
-               let layerIndex = parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
                 
-                // Update the feature in the layer
-                var updatedLayer = parent.layers[layerIndex]
-                let updatedFeature = GeoJSONFeature(
-                    id: editingFeature.id,
-                    properties: editingFeature.properties,
-                    geometry: newGeometry
-                )
-                updatedLayer.feature = updatedFeature
-                parent.layers[layerIndex] = updatedLayer
-                
-                // Remove existing overlays
-                mapView.removeOverlays(mapView.overlays)
-                
-                // Create and add new overlay
-                if let newOverlay = createOverlay(from: updatedFeature) {
-                    mainPolyline = newOverlay as? MKPolyline
-                    mapView.addOverlay(newOverlay, level: .aboveRoads)
-                }
-                
-                // Update point overlays
-                pointOverlays.removeAll()
-                for (idx, coordinate) in currentCoordinates.enumerated() {
-                    let point = EditablePoint(coordinate: coordinate, index: idx)
-                    pointOverlays.append(point)
+                // Update only the dragged point overlay
+                if index < pointOverlays.count {
+                    mapView.removeOverlay(pointOverlays[index])
+                    let point = EditablePoint(coordinate: newCoordinate, index: index)
+                    pointOverlays[index] = point
                     mapView.addOverlay(point, level: .aboveLabels)
                 }
-                
-                // Notify parent of the change
-                parent.onPointMoved(index, newCoordinate)
             }
         }
 
