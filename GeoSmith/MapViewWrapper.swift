@@ -232,6 +232,7 @@ struct MapViewWrapper: NSViewRepresentable {
         var polylineToFeature: [MKPolyline: GeoJSONFeature] = [:]
         var debounceTimer: Timer?
         let updateInterval: TimeInterval = 1.0 / 60.0
+        var lastDragUpdate: DispatchWorkItem?
 
         init(_ parent: MapViewWrapper) {
             self.parent = parent
@@ -321,6 +322,9 @@ struct MapViewWrapper: NSViewRepresentable {
                 }
 
             case .ended, .cancelled:
+                lastDragUpdate?.cancel()
+                lastDragUpdate = nil
+                
                 if let index = draggedPointIndex {
                     parent.onPointMoved(index, coordinate)
                     draggedPointIndex = nil  // Clear the dragged point index
@@ -342,80 +346,112 @@ struct MapViewWrapper: NSViewRepresentable {
                 return
             }
             
-            let currentTime = CACurrentMediaTime()
-            guard (currentTime - lastUpdateTime) >= updateInterval else { return }
-            lastUpdateTime = currentTime
+            // Cancel any pending updates
+            lastDragUpdate?.cancel()
             
-            // Update current coordinates for the point being dragged
             if index < currentCoordinates.count {
+                // Update coordinate in array
                 currentCoordinates[index] = newCoordinate
                 
-                // Separate handling for polygons and linestrings
                 if let geometry = editingFeature.geometry {
                     switch geometry.type {
-                    case .polygon:
-                        // For polygons, ensure closure
-                        if index == 0 || index == currentCoordinates.count - 1 {
-                            let lastIndex = currentCoordinates.count - 1
-                            currentCoordinates[0] = newCoordinate
-                            currentCoordinates[lastIndex] = newCoordinate
-                        }
-                        
-                        // Update layer state to persist changes
-                        if let newGeometry = updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
-                           let layerIndex = parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
-                            var updatedLayer = parent.layers[layerIndex]
-                            let updatedFeature = GeoJSONFeature(
-                                id: editingFeature.id,
-                                properties: editingFeature.properties,
-                                geometry: newGeometry
-                            )
-                            updatedLayer.feature = updatedFeature
-                            parent.layers[layerIndex] = updatedLayer
-                            
-                            // Update visual representation
-                            mapView.removeOverlays(mapView.overlays.filter { $0 is MKPolygon })
-                            let newPolygon = MKPolygon(coordinates: currentCoordinates, count: currentCoordinates.count)
-                            mapView.addOverlay(newPolygon, level: .aboveRoads)
-                        }
-                        
                     case .lineString:
-                        // For linestrings, update both visual and state
-                        if let existingPolyline = mainPolyline {
-                            mapView.removeOverlay(existingPolyline)
-                            let newPolyline = MKPolyline(coordinates: currentCoordinates, count: currentCoordinates.count)
-                            mainPolyline = newPolyline
-                            mapView.addOverlay(newPolyline, level: .aboveRoads)
+                        // LineString case remains the same as previous optimization
+                        let workItem = DispatchWorkItem { [weak self] in
+                            guard let self = self else { return }
                             
-                            // Update layer state
-                            if let newGeometry = updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
-                               let layerIndex = parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
-                                var updatedLayer = parent.layers[layerIndex]
+                            var overlaysToRemove: [MKOverlay] = []
+                            var overlaysToAdd: [MKOverlay] = []
+                            
+                            if let existingPolyline = self.mainPolyline {
+                                overlaysToRemove.append(existingPolyline)
+                            }
+                            let newPolyline = MKPolyline(coordinates: self.currentCoordinates, count: self.currentCoordinates.count)
+                            self.mainPolyline = newPolyline
+                            overlaysToAdd.append(newPolyline)
+                            
+                            if index < self.pointOverlays.count {
+                                overlaysToRemove.append(self.pointOverlays[index])
+                                let point = EditablePoint(coordinate: newCoordinate, index: index)
+                                self.pointOverlays[index] = point
+                                overlaysToAdd.append(point)
+                            }
+                            
+                            mapView.removeOverlays(overlaysToRemove)
+                            mapView.addOverlays(overlaysToAdd, level: .aboveRoads)
+                            
+                            if let newGeometry = self.updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
+                               let layerIndex = self.parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
+                                var updatedLayer = self.parent.layers[layerIndex]
                                 updatedLayer.feature = GeoJSONFeature(
                                     id: editingFeature.id,
                                     properties: editingFeature.properties,
                                     geometry: newGeometry
                                 )
-                                parent.layers[layerIndex] = updatedLayer
+                                self.parent.layers[layerIndex] = updatedLayer
                             }
                         }
+                        
+                        lastDragUpdate = workItem
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0/240.0, execute: workItem)
+                        
+                    case .polygon:
+                        // Optimized polygon case
+                        let workItem = DispatchWorkItem { [weak self] in
+                            guard let self = self else { return }
+                            
+                            // Handle first/last point synchronization for polygons
+                            if index == 0 || index == self.currentCoordinates.count - 1 {
+                                let lastIndex = self.currentCoordinates.count - 1
+                                self.currentCoordinates[0] = newCoordinate
+                                self.currentCoordinates[lastIndex] = newCoordinate
+                            }
+                            
+                            var overlaysToRemove: [MKOverlay] = []
+                            var overlaysToAdd: [MKOverlay] = []
+                            
+                            // Remove existing polygon overlays
+                            overlaysToRemove.append(contentsOf: mapView.overlays.filter { $0 is MKPolygon })
+                            
+                            // Add new polygon
+                            let newPolygon = MKPolygon(coordinates: self.currentCoordinates, count: self.currentCoordinates.count)
+                            overlaysToAdd.append(newPolygon)
+                            
+                            // Handle point overlay
+                            if index < self.pointOverlays.count {
+                                overlaysToRemove.append(self.pointOverlays[index])
+                                let point = EditablePoint(coordinate: newCoordinate, index: index)
+                                self.pointOverlays[index] = point
+                                overlaysToAdd.append(point)
+                            }
+                            
+                            // Batch update overlays
+                            mapView.removeOverlays(overlaysToRemove)
+                            mapView.addOverlays(overlaysToAdd, level: .aboveRoads)
+                            
+                            // Update layer state
+                            if let newGeometry = self.updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
+                               let layerIndex = self.parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
+                                var updatedLayer = self.parent.layers[layerIndex]
+                                updatedLayer.feature = GeoJSONFeature(
+                                    id: editingFeature.id,
+                                    properties: editingFeature.properties,
+                                    geometry: newGeometry
+                                )
+                                self.parent.layers[layerIndex] = updatedLayer
+                            }
+                        }
+                        
+                        lastDragUpdate = workItem
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0/240.0, execute: workItem)
                         
                     default:
                         break
                     }
                 }
                 
-                // Cache the current state
                 parent.editingState.modifiedCoordinates = currentCoordinates.map { coord in
                     [coord.longitude, coord.latitude]
-                }
-                
-                // Update only the dragged point overlay
-                if index < pointOverlays.count {
-                    mapView.removeOverlay(pointOverlays[index])
-                    let point = EditablePoint(coordinate: newCoordinate, index: index)
-                    pointOverlays[index] = point
-                    mapView.addOverlay(point, level: .aboveLabels)
                 }
             }
         }
@@ -439,10 +475,8 @@ struct MapViewWrapper: NSViewRepresentable {
                 
                 if index >= exteriorRing.count { return nil }
                 
-                // Update the point at the specified index
                 exteriorRing[index] = newPoint
                 
-                // If we're updating the first or last point, update both to maintain closure
                 if index == 0 || index == exteriorRing.count - 1 {
                     exteriorRing[0] = newPoint
                     exteriorRing[exteriorRing.count - 1] = newPoint
@@ -458,7 +492,6 @@ struct MapViewWrapper: NSViewRepresentable {
         func createOverlay(from feature: GeoJSONFeature) -> MKOverlay? {
             guard let geometry = feature.geometry else { return nil }
             
-            // If in edit mode, create appropriate overlay
             if parent.editingState.isEnabled && feature.id == parent.editingState.selectedFeatureId {
                 switch geometry.type {
                 case .point:
@@ -472,7 +505,6 @@ struct MapViewWrapper: NSViewRepresentable {
                         return MKPolyline(coordinates: points, count: points.count)
                     }
                 case .polygon:
-                    // In edit mode, show polygon as both polyline and polygon
                     if let polygonCoords = geometry.polygonCoordinates {
                         let exteriorRing = polygonCoords[0].map { coord in
                             CLLocationCoordinate2D(latitude: coord[1], longitude: coord[0])
@@ -483,7 +515,6 @@ struct MapViewWrapper: NSViewRepresentable {
                     break
                 }
             } else {
-                // Normal display mode
                 switch geometry.type {
                 case .point:
                     if let coords = geometry.pointCoordinates {
@@ -545,7 +576,6 @@ struct MapViewWrapper: NSViewRepresentable {
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
                 if parent.editingState.isEnabled && parent.editingState.selectedFeatureId != nil {
-                    // When editing, make polygon semi-transparent
                     renderer.fillColor = .systemBlue.withAlphaComponent(0.1)
                     renderer.strokeColor = .systemBlue
                     renderer.lineWidth = 2
@@ -569,33 +599,27 @@ struct MapViewWrapper: NSViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            // Only update if we're not dragging a point
             if draggedPointIndex == nil {
-                // Just update the point overlays
                 updatePointOverlays(mapView)
             }
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
-            // Called when zoom/pan starts
             updateOverlaysDuringZoom(mapView)
         }
 
         func mapViewRegionIsChanging(_ mapView: MKMapView) {
-            // Called continuously during zoom/pan
             updateOverlaysDuringZoom(mapView)
         }
 
         func setupBackgroundFeatures() {
             guard let mapView = self.mapView else { return }
 
-            // Clear existing features
             for (polyline, _) in polylineToFeature {
                 mapView.removeOverlay(polyline)
             }
             polylineToFeature.removeAll()
 
-            // Add non-editing features
             let backgroundFeatures = parent.features.filter { $0.id != parent.editingState.selectedFeatureId }
             for feature in backgroundFeatures {
                 if let overlay = createOverlay(from: feature) {
@@ -624,34 +648,28 @@ struct MapViewWrapper: NSViewRepresentable {
         }
         
         func getCurrentZoomLevel(_ mapView: MKMapView) -> Double {
-            // Calculate zoom level based on latitude span
-            return log2(360 * ((Double(mapView.frame.width) / 256) / mapView.region.span.latitudeDelta)) + 1
+            let span = mapView.region.span.longitudeDelta
+            let zoomLevel = log2(360.0 / span)
+            return min(max(zoomLevel, 0), 20)
         }
 
         func getPointRadius(for mapView: MKMapView) -> CLLocationDistance {
             let zoomLevel = mapView.zoomLevel
 
-            // Start with a small base radius in meters
             let baseRadius = 3.5
 
-            // Scale down as we zoom in, up as we zoom out
             let scaleFactor = pow(2.0, 15 - zoomLevel)
 
-            // Clamp the radius between 2 and 10 meters
             return min(max(baseRadius * scaleFactor, 2), 15)
         }
 
         func getLineWidth(for zoomLevel: Double) -> CGFloat {
-            // Base width is 5 points
             let baseWidth: CGFloat = 5.0
-            // Scale factor decreases as zoom level increases
             let scaleFactor = max(1.0, 15.0 / pow(2, zoomLevel - 10))
-            // Clamp the final width between 2 and 15 points
             return min(max(baseWidth * scaleFactor, 2), 15)
         }
 
         func updateOverlaysDuringZoom(_ mapView: MKMapView) {
-            // Only update if we're not dragging a point
             if draggedPointIndex == nil {
                 updatePointOverlays(mapView)
             }
