@@ -28,17 +28,6 @@ struct FeatureSidebarView: View {
                 region: $region,
                 shouldForceUpdate: $shouldForceUpdate
             )
-
-            Divider()
-
-            ControlsView(
-                editingState: $editingState,
-                selectedFeatureType: $selectedFeatureType,
-                isDrawing: $isDrawing,
-                currentPoints: $currentPoints,
-                layers: $layers,
-                selectedFeatures: $selectedFeatures
-            )
         }
     }
 }
