@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9D8BBB492D2461D8008AEBC7 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 9D8BBB482D2461D8008AEBC7 /* .gitignore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		8306B77A2CE8EFAE00FF9936 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +31,7 @@
 		8306B7662CE8EFAD00FF9936 /* GeoSmith.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GeoSmith.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8306B7792CE8EFAE00FF9936 /* GeoSmithTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeoSmithTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8306B7832CE8EFAE00FF9936 /* GeoSmithUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GeoSmithUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9D8BBB482D2461D8008AEBC7 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -93,6 +98,7 @@
 				8306B77C2CE8EFAE00FF9936 /* GeoSmithTests */,
 				8306B7862CE8EFAE00FF9936 /* GeoSmithUITests */,
 				8306B7672CE8EFAD00FF9936 /* Products */,
+				9D8BBB482D2461D8008AEBC7 /* .gitignore */,
 			);
 			sourceTree = "<group>";
 		};
@@ -226,6 +232,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9D8BBB492D2461D8008AEBC7 /* .gitignore in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
