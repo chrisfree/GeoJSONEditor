@@ -1,0 +1,37 @@
+# Xcode
+## User settings
+xcuserdata/
+
+# Xcode User Interface State
+*.xcuserstate
+
+# Other common Xcode files to ignore
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcworkspace/contents.xcworkspacedata
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+!default.mode1v3
+!default.mode2v3
+!default.perspectivev3
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+
+# CocoaPods
+Pods/
+
+# Carthage
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
