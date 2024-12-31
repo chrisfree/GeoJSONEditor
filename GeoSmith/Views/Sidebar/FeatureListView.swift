@@ -6,19 +6,24 @@
 //
 
 import SwiftUI
+import MapKit
 
 struct FeatureListView: View {
     @EnvironmentObject private var selectionState: SelectionState
     @Binding var selectedFeatures: Set<UUID>
     @Binding var layers: [LayerState]
     @Binding var editingState: EditingState
+    @Binding var region: MKCoordinateRegion
+    @Binding var shouldForceUpdate: Bool
 
     var body: some View {
         List(selection: $selectedFeatures) {
             ForEach(layers) { layer in
                 FeatureRowView(layer: layer,
                                layers: $layers,
-                               editingState: $editingState)
+                               editingState: $editingState,
+                               region: $region,
+                               shouldForceUpdate: $shouldForceUpdate)
             }
             .onMove { source, destination in
                 layers.move(fromOffsets: source, toOffset: destination)

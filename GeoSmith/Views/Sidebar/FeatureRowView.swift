@@ -6,29 +6,47 @@
 //
 
 import SwiftUI
+import MapKit
 
 struct FeatureRowView: View {
     @EnvironmentObject private var selectionState: SelectionState
     let layer: LayerState
     @Binding var layers: [LayerState]
     @Binding var editingState: EditingState
+    @Binding var region: MKCoordinateRegion
+    @Binding var shouldForceUpdate: Bool
     @State private var isEditingName: Bool = false
     @State private var editedName: String = ""
     @State private var showingDeleteAlert: Bool = false
     @State private var isShowingPoints: Bool = false
     @FocusState private var isTextFieldFocused: Bool
 
+    private var featureName: String {
+        guard let properties = layer.feature.properties else {
+            return "Unnamed Feature"
+        }
+        
+        if let name = properties["name"]?.stringValue {
+            return name
+        }
+        if let name = properties["Name"]?.stringValue {
+            return name
+        }
+        return "Unnamed Feature"
+    }
+    
     var body: some View {
         DisclosureGroup(
             isExpanded: $isShowingPoints,
             content: {
-                FeaturePointsView(
-                    coordinates: layer.feature.geometry.coordinates,
-                    layerId: layer.id,
-                    editingState: $editingState,
-                    layers: $layers
-                )
-                .selectionDisabled()
+                if let geometry = layer.feature.geometry {
+                    FeaturePointsView(
+                        layerId: layer.id,
+                        editingState: $editingState,
+                        layers: $layers
+                    )
+                    .selectionDisabled()
+                }
             },
             label: {
                 HStack {
@@ -49,13 +67,9 @@ struct FeatureRowView: View {
                                 isEditingName = false
                             }
                     } else {
-                        Text(layer.feature.properties["name"]?.stringValue ??
-                             layer.feature.properties["Name"]?.stringValue ??
-                             "Unnamed Feature")
+                        Text(featureName)
                             .onTapGesture(count: 2) { // Handle double click/tap
-                                editedName = layer.feature.properties["name"]?.stringValue ??
-                                layer.feature.properties["Name"]?.stringValue ??
-                                "Unnamed Feature"
+                                editedName = featureName
                                 isEditingName = true
                                 // Delay focus to ensure view is ready
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -106,6 +120,13 @@ struct FeatureRowView: View {
                     }
                 }
                 .padding(.leading)
+                .contentShape(Rectangle())
+                .overlay(
+                    Button(action: centerMapOnFeature) {
+                        Color.clear
+                    }
+                    .buttonStyle(.plain)
+                )
             }
         )
         .alert(isPresented: $showingDeleteAlert) {
@@ -139,9 +160,7 @@ struct FeatureRowView: View {
 
     private func duplicateFeature() {
         // Get the current name of the feature
-        let currentName = layer.feature.properties["name"]?.stringValue ??
-        layer.feature.properties["Name"]?.stringValue ??
-        "Unnamed Feature"
+        let currentName = featureName
 
         // Create a copy of the feature
         var duplicatedFeature = layer.feature
@@ -150,7 +169,7 @@ struct FeatureRowView: View {
         duplicatedFeature.id = UUID()
 
         // Update properties with new name
-        var newProperties = duplicatedFeature.properties
+        var newProperties = duplicatedFeature.properties ?? [:]
         newProperties["name"] = .string("\(currentName) copy")
         duplicatedFeature.properties = newProperties
 
@@ -177,7 +196,7 @@ struct FeatureRowView: View {
     private func updateFeatureName(_ newName: String) {
         if let index = layers.firstIndex(where: { $0.id == layer.id }) {
             var updatedFeature = layers[index].feature
-            var properties = updatedFeature.properties
+            var properties = updatedFeature.properties ?? [:]
             properties["name"] = .string(newName)
             updatedFeature.properties = properties
             layers[index].feature = updatedFeature
@@ -206,4 +225,110 @@ struct FeatureRowView: View {
             }
         }
     }
+
+    private func centerMapOnFeature() {
+        print("Centering map on feature: \(layer.feature.id)")
+        guard let geometry = layer.feature.geometry else { return }
+        
+        // Extract coordinates based on geometry type
+        var coordinates: [[Double]] = []
+        switch geometry.type {
+        case .point:
+            if let point = geometry.pointCoordinates {
+                coordinates = [point]
+                print("Point coordinates: \(point)")
+            }
+        case .multiPoint:
+            coordinates = geometry.multiPointCoordinates ?? []
+        case .lineString:
+            coordinates = geometry.lineStringCoordinates ?? []
+        case .multiLineString:
+            coordinates = geometry.multiLineStringCoordinates?.flatMap { $0 } ?? []
+        case .polygon:
+            if let polygonCoords = geometry.polygonCoordinates {
+                // Include all rings for better bounds calculation
+                coordinates = polygonCoords.flatMap { $0 }
+                print("Polygon coordinates count: \(coordinates.count)")
+            }
+        case .multiPolygon:
+            if let multiPolygon = geometry.multiPolygonCoordinates {
+                coordinates = multiPolygon.flatMap { $0.flatMap { $0 } }
+            }
+        case .geometryCollection:
+            if let firstGeometry = geometry.geometryCollectionGeometries?.first {
+                coordinates = getAllCoordinates(from: firstGeometry)
+            }
+        }
+        
+        guard !coordinates.isEmpty else {
+            print("No coordinates found")
+            return
+        }
+        
+        print("Processing \(coordinates.count) coordinates")
+        
+        // Calculate bounds
+        let lats = coordinates.map { $0[1] }
+        let lons = coordinates.map { $0[0] }
+        
+        let minLat = lats.min()!
+        let maxLat = lats.max()!
+        let minLon = lons.min()!
+        let maxLon = lons.max()!
+        
+        print("Bounds - Lat: [\(minLat), \(maxLat)], Lon: [\(minLon), \(maxLon)]")
+        
+        // Add padding based on geometry type
+        let paddingFactor: Double
+        switch geometry.type {
+        case .point:
+            paddingFactor = 0.01 // 1% padding for points
+        case .polygon, .multiPolygon:
+            paddingFactor = 0.1  // 10% padding for polygons
+        default:
+            paddingFactor = 0.2  // 20% padding for other types
+        }
+        
+        let latSpan = max(maxLat - minLat, 0.01) // Minimum span of 0.01 degrees
+        let lonSpan = max(maxLon - minLon, 0.01)
+        
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLon + maxLon) / 2
+        )
+        
+        let span = MKCoordinateSpan(
+            latitudeDelta: latSpan * (1 + paddingFactor),
+            longitudeDelta: lonSpan * (1 + paddingFactor)
+        )
+        
+        print("Setting new region - center: \(center), span: \(span)")
+        
+        // Update the region and force refresh
+        region = MKCoordinateRegion(center: center, span: span)
+        DispatchQueue.main.async {
+            self.shouldForceUpdate = true
+        }
+    }
+    
+    private func getAllCoordinates(from geometry: GeoJSONGeometry) -> [[Double]] {
+        switch geometry.type {
+        case .point:
+            return geometry.pointCoordinates.map { [$0] } ?? []
+        case .multiPoint:
+            return geometry.multiPointCoordinates ?? []
+        case .lineString:
+            return geometry.lineStringCoordinates ?? []
+        case .multiLineString:
+            return geometry.multiLineStringCoordinates?.flatMap { $0 } ?? []
+        case .polygon:
+            return geometry.polygonCoordinates?.flatMap { $0 } ?? []
+        case .multiPolygon:
+            return geometry.multiPolygonCoordinates?.flatMap { $0.flatMap { $0 } } ?? []
+        case .geometryCollection:
+            return geometry.geometryCollectionGeometries?.first.map { getAllCoordinates(from: $0) } ?? []
+        }
+    }
+
+    // Rest of the implementation remains the same
 }

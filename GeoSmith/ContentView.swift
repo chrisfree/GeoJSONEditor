@@ -24,7 +24,7 @@ struct ContentView: View {
     @State private var alertMessage = ""
     @State private var editingState = EditingState()
     @State private var lastImportedURL: URL?
-    @State private var shouldForceMapUpdate: Bool = false
+    @State private var shouldForceUpdate = false
     @State private var isInspectorVisible: Bool = true
 
     var visibleFeatures: [GeoJSONFeature] {
@@ -40,7 +40,9 @@ struct ContentView: View {
                 editingState: $editingState,
                 selectedFeatureType: $selectedFeatureType,
                 isDrawing: $isDrawing,
-                currentPoints: $currentPoints
+                currentPoints: $currentPoints,
+                region: $mapRegion,
+                shouldForceUpdate: $shouldForceUpdate
             )
             .frame(minWidth: 200, idealWidth: 200, maxWidth: 350)
 
@@ -49,11 +51,12 @@ struct ContentView: View {
                 MapViewWrapper(
                     features: layers.filter { $0.isVisible }.map { $0.feature },
                     selectedFeatures: selectedFeatures,
+                    layers: $layers,
                     isDrawing: $isDrawing,
                     currentPoints: $currentPoints,
                     region: $mapRegion,
                     editingState: $editingState,
-                    shouldForceUpdate: $shouldForceMapUpdate,
+                    shouldForceUpdate: $shouldForceUpdate,
                     onPointSelected: handlePointSelection,
                     onPointMoved: handlePointMoved
                 )
@@ -67,7 +70,6 @@ struct ContentView: View {
                         .background(.thinMaterial)
                         .clipShape(Circle())
                         .shadow(radius: 2)
-
                 }
                 .buttonStyle(PlainButtonStyle())
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -138,7 +140,7 @@ struct ContentView: View {
             editingState.isDraggingPoint = false  // Ensure drag state is cleared
 
             // Force a map update to ensure overlays are redrawn
-            shouldForceMapUpdate = true
+            shouldForceUpdate = true
 
             // Restore all layers visibility
             for i in 0..<layers.count {
@@ -176,13 +178,13 @@ struct ContentView: View {
             "name": .string("New \(selectedFeatureType.rawValue.capitalized)")
         ]
 
+        // Create geometry with proper type
+        let geometry = GeoJSONGeometry(lineString: currentPoints)
+        
+        // Create feature with default type
         let newFeature = GeoJSONFeature(
-            type: "Feature",
             properties: properties,
-            geometry: GeoJSONGeometry(
-                type: "LineString",
-                coordinates: currentPoints
-            )
+            geometry: geometry
         )
 
         layers.append(LayerState(feature: newFeature))
@@ -212,7 +214,11 @@ struct ContentView: View {
         }
 
         // Only consider visible layers with coordinates
-        let visibleLayers = layers.filter { $0.isVisible && !$0.feature.geometry.coordinates.isEmpty }
+        let visibleLayers = layers.filter { layer in
+            guard let geometry = layer.feature.geometry else { return false }
+            return layer.isVisible && geometry.hasCoordinates()
+        }
+        
         guard !visibleLayers.isEmpty else {
             print("No visible layers with coordinates found")
             return
@@ -221,11 +227,14 @@ struct ContentView: View {
         // Calculate bounds
         var bounds = MapBounds()
         for layer in visibleLayers {
-            for coordinate in layer.feature.geometry.coordinates {
-                guard coordinate.count >= 2,
-                      coordinate[1].isFinite && coordinate[0].isFinite else { continue }
+            if let geometry = layer.feature.geometry,
+               let coords = geometry.lineStringCoordinates {
+                for coordinate in coords {
+                    guard coordinate.count >= 2,
+                          coordinate[1].isFinite && coordinate[0].isFinite else { continue }
 
-                bounds.extend(lat: coordinate[1], lon: coordinate[0])
+                    bounds.extend(lat: coordinate[1], lon: coordinate[0])
+                }
             }
         }
 
@@ -264,7 +273,7 @@ struct ContentView: View {
             )
 
             // Set a flag to force update
-            self.shouldForceMapUpdate = true
+            self.shouldForceUpdate = true
             self.mapRegion = newRegion
 
             print("Map region updated to: center(\(newRegion.center.latitude), \(newRegion.center.longitude)), span(\(newRegion.span.latitudeDelta), \(newRegion.span.longitudeDelta))")
@@ -326,27 +335,63 @@ struct ContentView: View {
         openPanel.allowsMultipleSelection = false
 
         openPanel.begin { response in
-            print("Open panel completed with response: \(response == .OK ? "OK" : "Cancel")")
-
             if response == .OK, let url = openPanel.url {
-                print("Selected file: \(url.lastPathComponent)")
-
                 do {
                     let data = try Data(contentsOf: url)
-                    print("File data loaded, size: \(data.count) bytes")
-
                     let decoder = JSONDecoder()
                     let featureCollection = try decoder.decode(GeoJSONFeatureCollection.self, from: data)
-                    print("Successfully decoded feature collection with \(featureCollection.features.count) features")
 
                     DispatchQueue.main.async {
-                        print("\nUpdating layers on main thread...")
+                        // Update layers first
                         self.layers = featureCollection.features.map { LayerState(feature: $0) }
-                        print("Created \(self.layers.count) layer states")
-
-                        print("\nCalling recenterMap...")
-                        self.recenterMap()
-                        print("recenterMap called")
+                        
+                        // Calculate bounds for all features
+                        var allCoordinates: [[Double]] = []
+                        for feature in featureCollection.features {
+                            if let geometry = feature.geometry {
+                                let coords = self.getCoordinates(from: geometry)
+                                allCoordinates.append(contentsOf: coords)
+                            }
+                        }
+                        
+                        guard !allCoordinates.isEmpty else {
+                            print("No coordinates found in imported features")
+                            return
+                        }
+                        
+                        print("Processing \(allCoordinates.count) total coordinates")
+                        
+                        // Calculate bounds
+                        let lats = allCoordinates.map { $0[1] }
+                        let lons = allCoordinates.map { $0[0] }
+                        
+                        let minLat = lats.min()!
+                        let maxLat = lats.max()!
+                        let minLon = lons.min()!
+                        let maxLon = lons.max()!
+                        
+                        print("Total bounds - Lat: [\(minLat), \(maxLat)], Lon: [\(minLon), \(maxLon)]")
+                        
+                        // Add padding for better visibility
+                        let paddingFactor = 0.1 // 10% padding
+                        
+                        let latSpan = max(maxLat - minLat, 0.01)
+                        let lonSpan = max(maxLon - minLon, 0.01)
+                        
+                        let center = CLLocationCoordinate2D(
+                            latitude: (minLat + maxLat) / 2,
+                            longitude: (minLon + maxLon) / 2
+                        )
+                        
+                        let span = MKCoordinateSpan(
+                            latitudeDelta: latSpan * (1 + paddingFactor),
+                            longitudeDelta: lonSpan * (1 + paddingFactor)
+                        )
+                        
+                        print("Setting initial region - center: \(center), span: \(span)")
+                        
+                        self.mapRegion = MKCoordinateRegion(center: center, span: span)
+                        self.shouldForceUpdate = true
 
                         self.lastImportedURL = url
                         self.alertMessage = "Successfully loaded \(self.layers.count) features"
@@ -363,16 +408,39 @@ struct ContentView: View {
         }
     }
 
-    // In ContentView, keep only this version:
+    private func getCoordinates(from geometry: GeoJSONGeometry) -> [[Double]] {
+        switch geometry.type {
+        case .point:
+            if let point = geometry.pointCoordinates {
+                return [point]
+            }
+        case .multiPoint:
+            return geometry.multiPointCoordinates ?? []
+        case .lineString:
+            return geometry.lineStringCoordinates ?? []
+        case .multiLineString:
+            return geometry.multiLineStringCoordinates?.flatMap { $0 } ?? []
+        case .polygon:
+            return geometry.polygonCoordinates?.flatMap { $0 } ?? []
+        case .multiPolygon:
+            return geometry.multiPolygonCoordinates?.flatMap { $0.flatMap { $0 } } ?? []
+        case .geometryCollection:
+            if let first = geometry.geometryCollectionGeometries?.first {
+                return getCoordinates(from: first)
+            }
+        }
+        return []
+    }
+
     private func handlePointMoved(index: Int, newCoordinate: CLLocationCoordinate2D) {
         guard let selectedId = editingState.selectedFeatureId,
-              let layerIndex = layers.firstIndex(where: { $0.feature.id == selectedId }) else {
-            print("Could not find layer for selected feature")
+              let layerIndex = layers.firstIndex(where: { $0.id == selectedId }),
+              let geometry = layers[layerIndex].feature.geometry,
+              var newCoords = geometry.lineStringCoordinates else {
+            print("Could not find layer for selected feature or get coordinates")
             return
         }
 
-        // Create new coordinates array
-        var newCoords = layers[layerIndex].feature.geometry.coordinates
         guard index < newCoords.count else {
             print("Invalid index for coordinates")
             return
@@ -381,10 +449,11 @@ struct ContentView: View {
         // Update the coordinate
         newCoords[index] = [newCoordinate.longitude, newCoordinate.latitude]
 
-        // Create updated feature
+        // Create updated feature with new geometry
         var updatedFeature = layers[layerIndex].feature
-        updatedFeature.geometry.coordinates = newCoords
-
+        let newGeometry = GeoJSONGeometry(lineString: newCoords)
+        updatedFeature.geometry = newGeometry
+        
         // Update the layer
         layers[layerIndex].feature = updatedFeature
 
@@ -401,7 +470,9 @@ struct ContentView: View {
            let featureId = editingState.selectedFeatureId,
            let layerIndex = layers.firstIndex(where: { $0.feature.id == featureId }) {
             var feature = layers[layerIndex].feature
-            feature.geometry.coordinates = originalCoordinates
+            // Create new geometry with the original coordinates
+            let newGeometry = GeoJSONGeometry(lineString: originalCoordinates)
+            feature.geometry = newGeometry
             layers[layerIndex].feature = feature
         }
 

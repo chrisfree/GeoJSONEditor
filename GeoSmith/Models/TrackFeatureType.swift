@@ -16,7 +16,13 @@ enum TrackFeatureType: String {
     case drsZone = "drs"
 
     static func fromFeature(_ feature: GeoJSONFeature) -> TrackFeatureType {
-        if let id = feature.properties["id"]?.stringValue {
+        // Handle optional properties safely
+        guard let properties = feature.properties else {
+            return .circuit  // Default to circuit if no properties
+        }
+        
+        if let idValue = properties["id"],
+           case let .string(id) = idValue {
             switch id {
             case "sector1":
                 return .sectorOne
@@ -28,8 +34,8 @@ enum TrackFeatureType: String {
                 return .circuit
             default:
                 // If it's not a sector, check if it's a circuit by looking at other properties
-                if feature.properties["Location"] != nil ||
-                   feature.properties["length"] != nil {
+                if properties["Location"] != nil ||
+                   properties["length"] != nil {
                     return .circuit
                 }
                 return .drsZone

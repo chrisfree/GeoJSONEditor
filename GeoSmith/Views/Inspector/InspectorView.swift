@@ -40,8 +40,11 @@ struct InspectorView: View {
             return
         }
         
-        var newProperties = layers[layerIndex].feature.properties
-        newProperties.removeValue(forKey: oldKey)
+        // Create new properties dictionary if none exists
+        var newProperties = layers[layerIndex].feature.properties ?? [:]
+        if oldKey != newKey {
+            newProperties.removeValue(forKey: oldKey)
+        }
         newProperties[newKey] = PropertyValue.string(value)
         
         var updatedFeature = layers[layerIndex].feature
@@ -49,9 +52,11 @@ struct InspectorView: View {
         layers[layerIndex].feature = updatedFeature
         
         // Update ordered keys
-        if let index = orderedPropertyKeys.firstIndex(of: oldKey) {
-            orderedPropertyKeys.remove(at: index)
-            orderedPropertyKeys.insert(newKey, at: index)
+        if oldKey != newKey {
+            if let index = orderedPropertyKeys.firstIndex(of: oldKey) {
+                orderedPropertyKeys.remove(at: index)
+                orderedPropertyKeys.insert(newKey, at: index)
+            }
         }
     }
     
@@ -62,7 +67,8 @@ struct InspectorView: View {
             return
         }
         
-        var newProperties = layers[layerIndex].feature.properties
+        // Create new properties dictionary if none exists
+        var newProperties = layers[layerIndex].feature.properties ?? [:]
         newProperties.removeValue(forKey: key)
         
         var updatedFeature = layers[layerIndex].feature
@@ -81,7 +87,8 @@ struct InspectorView: View {
             return
         }
         
-        var newProperties = layers[layerIndex].feature.properties
+        // Create new properties dictionary if none exists
+        var newProperties = layers[layerIndex].feature.properties ?? [:]
         newProperties[newPropertyKey] = PropertyValue.string(newPropertyValue)
         
         var updatedFeature = layers[layerIndex].feature
@@ -101,7 +108,7 @@ struct InspectorView: View {
             if let feature = selectedFeature {
                 Form {
                     VStack(alignment: .leading, spacing: 12) {
-                        // Feature ID section remains the same
+                        // Feature ID section
                         HStack {
                             Text("Feature ID")
                                 .frame(width: 100, alignment: .trailing)
@@ -111,11 +118,20 @@ struct InspectorView: View {
                         
                         Divider()
                         
-                        // Feature Type section remains the same
+                        // Feature Type sections
                         HStack {
                             Text("Type")
                                 .frame(width: 100, alignment: .trailing)
-                            Text(feature.type)
+                            Text("Feature")
+                        }
+                        
+                        // Geometry Type
+                        if let geometry = feature.geometry {
+                            HStack {
+                                Text("Geometry")
+                                    .frame(width: 100, alignment: .trailing)
+                                Text(geometry.type.rawValue)
+                            }
                         }
                         
                         Divider()
@@ -129,7 +145,8 @@ struct InspectorView: View {
                         List {
                             Section {
                                 ForEach(orderedPropertyKeys, id: \.self) { key in
-                                    if let value = feature.properties[key]?.stringValue {
+                                    if let properties = feature.properties,
+                                       let value = properties[key]?.stringValue {
                                         HStack(spacing: 8) {
                                             TextField("Key", text: Binding(
                                                 get: { key },
@@ -177,6 +194,7 @@ struct InspectorView: View {
                                     orderedPropertyKeys.move(fromOffsets: source, toOffset: destination)
                                 })
                             }
+                            
                             // Add new property row at the end
                             HStack(spacing: 8) {
                                 TextField("Key", text: $newPropertyKey, prompt: Text("Key").foregroundColor(.gray))
@@ -203,10 +221,14 @@ struct InspectorView: View {
                             .font(.headline)
                             .padding(.top)
                         
-                        HStack {
-                            Text("Points")
-                                .frame(width: 100, alignment: .trailing)
-                            Text("\(feature.geometry.coordinates.count)")
+                        // Update points count to use proper geometry coordinate access
+                        if let geometry = feature.geometry,
+                           let coords = geometry.lineStringCoordinates {
+                            HStack {
+                                Text("Points")
+                                    .frame(width: 100, alignment: .trailing)
+                                Text("\(coords.count)")
+                            }
                         }
                     }
                     .padding(.horizontal)
@@ -214,9 +236,13 @@ struct InspectorView: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
                 .task(id: feature.id) {
-                    // Reset and update ordered keys when feature changes
+                    // Reset and update ordered keys
                     expandedFields.removeAll()
-                    orderedPropertyKeys = Array(feature.properties.keys).sorted()
+                    if let properties = feature.properties {
+                        orderedPropertyKeys = Array(properties.keys).sorted()
+                    } else {
+                        orderedPropertyKeys = []
+                    }
                 }
             } else {
                 Text("No feature selected")
