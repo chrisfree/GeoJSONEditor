@@ -334,41 +334,67 @@ struct MapViewWrapper: NSViewRepresentable {
 
         func updatePolylineCoordinates(_ newCoordinate: CLLocationCoordinate2D, at index: Int) {
             guard let mapView = self.mapView,
-                  let editingFeature = currentEditingFeature else { return }
+                  let editingFeature = currentEditingFeature else {
+                print("Debug: No map view or editing feature")
+                return
+            }
             
             let currentTime = CACurrentMediaTime()
             guard (currentTime - lastUpdateTime) >= updateInterval else { return }
             lastUpdateTime = currentTime
             
-            // Update coordinates in currentCoordinates for display
-            currentCoordinates[index] = newCoordinate
-            
-            // Update the geometry
-            if let newGeometry = updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature) {
-                // Update the overlay
-                if let oldPolyline = mainPolyline {
-                    mapView.removeOverlay(oldPolyline)
+            // Update current coordinates for the point being dragged
+            if index < currentCoordinates.count {
+                currentCoordinates[index] = newCoordinate
+                
+                // For polygons, ensure closure
+                if let geometry = editingFeature.geometry,
+                   geometry.type == .polygon,
+                   (index == 0 || index == currentCoordinates.count - 1) {
+                    let lastIndex = currentCoordinates.count - 1
+                    currentCoordinates[0] = newCoordinate
+                    currentCoordinates[lastIndex] = newCoordinate
                 }
                 
-                if let newOverlay = createOverlay(from: GeoJSONFeature(properties: editingFeature.properties, geometry: newGeometry)) {
+                // Cache the current state
+                parent.editingState.modifiedCoordinates = currentCoordinates.map { coord in
+                    [coord.longitude, coord.latitude]
+                }
+            }
+            
+            // Update the geometry
+            if let newGeometry = updateGeometryCoordinates(newCoordinate, at: index, for: editingFeature),
+               let layerIndex = parent.layers.firstIndex(where: { $0.id == editingFeature.id }) {
+                
+                // Update the feature in the layer
+                var updatedLayer = parent.layers[layerIndex]
+                let updatedFeature = GeoJSONFeature(
+                    id: editingFeature.id,
+                    properties: editingFeature.properties,
+                    geometry: newGeometry
+                )
+                updatedLayer.feature = updatedFeature
+                parent.layers[layerIndex] = updatedLayer
+                
+                // Remove existing overlays
+                mapView.removeOverlays(mapView.overlays)
+                
+                // Create and add new overlay
+                if let newOverlay = createOverlay(from: updatedFeature) {
                     mainPolyline = newOverlay as? MKPolyline
                     mapView.addOverlay(newOverlay, level: .aboveRoads)
                 }
                 
-                // Update point overlay
-                if let point = pointOverlays[safe: index] {
-                    mapView.removeOverlay(point)
-                    let newPoint = EditablePoint(coordinate: newCoordinate, index: index)
-                    pointOverlays[index] = newPoint
-                    mapView.addOverlay(newPoint, level: .aboveLabels)
+                // Update point overlays
+                pointOverlays.removeAll()
+                for (idx, coordinate) in currentCoordinates.enumerated() {
+                    let point = EditablePoint(coordinate: coordinate, index: idx)
+                    pointOverlays.append(point)
+                    mapView.addOverlay(point, level: .aboveLabels)
                 }
                 
                 // Notify parent of the change
-                debounceTimer?.invalidate()
-                debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
-                    guard let self = self else { return }
-                    self.parent.onPointMoved(index, newCoordinate)
-                }
+                parent.onPointMoved(index, newCoordinate)
             }
         }
 
@@ -387,9 +413,19 @@ struct MapViewWrapper: NSViewRepresentable {
             case .polygon:
                 guard var polygon = geometry.polygonCoordinates,
                       !polygon.isEmpty,
-                      var exteriorRing = polygon.first,
-                      index < exteriorRing.count else { return nil }
+                      var exteriorRing = polygon.first else { return nil }
+                
+                if index >= exteriorRing.count { return nil }
+                
+                // Update the point at the specified index
                 exteriorRing[index] = newPoint
+                
+                // If we're updating the first or last point, update both to maintain closure
+                if index == 0 || index == exteriorRing.count - 1 {
+                    exteriorRing[0] = newPoint
+                    exteriorRing[exteriorRing.count - 1] = newPoint
+                }
+                
                 polygon[0] = exteriorRing
                 return GeoJSONGeometry(polygon: polygon)
             default:
@@ -414,9 +450,12 @@ struct MapViewWrapper: NSViewRepresentable {
                         return MKPolyline(coordinates: points, count: points.count)
                     }
                 case .polygon:
-                    if let ring = geometry.polygonCoordinates?.first {
-                        let points = ring.map { CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]) }
-                        return MKPolyline(coordinates: points, count: points.count)
+                    // In edit mode, show polygon as both polyline and polygon
+                    if let polygonCoords = geometry.polygonCoordinates {
+                        let exteriorRing = polygonCoords[0].map { coord in
+                            CLLocationCoordinate2D(latitude: coord[1], longitude: coord[0])
+                        }
+                        return MKPolygon(coordinates: exteriorRing, count: exteriorRing.count)
                     }
                 default:
                     break
@@ -483,9 +522,16 @@ struct MapViewWrapper: NSViewRepresentable {
             
             if let polygon = overlay as? MKPolygon {
                 let renderer = MKPolygonRenderer(polygon: polygon)
-                renderer.fillColor = .systemGreen.withAlphaComponent(0.2)
-                renderer.strokeColor = .systemGreen
-                renderer.lineWidth = 2
+                if parent.editingState.isEnabled && parent.editingState.selectedFeatureId != nil {
+                    // When editing, make polygon semi-transparent
+                    renderer.fillColor = .systemBlue.withAlphaComponent(0.1)
+                    renderer.strokeColor = .systemBlue
+                    renderer.lineWidth = 2
+                } else {
+                    renderer.fillColor = .systemGreen.withAlphaComponent(0.2)
+                    renderer.strokeColor = .systemGreen
+                    renderer.lineWidth = 2
+                }
                 return renderer
             }
             

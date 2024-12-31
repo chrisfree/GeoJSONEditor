@@ -268,19 +268,23 @@ struct FeaturePointsView: View {
     }
 
     private func enterEditMode(forPoint index: Int) {
+        guard let layer = layers.first(where: { $0.id == layerId }) else { return }
+        
         editingState.isEnabled = true
         editingState.selectedFeatureId = layerId
         selectionState.selectPoint(index, mode: .single)
         
-        // Store modified coordinates
-        if let layerIndex = layers.firstIndex(where: { $0.id == layerId }),
-           let feature = layers[layerIndex].feature as? GeoJSONFeature,
-           let geometry = feature.geometry,
-           let lineStringCoords = geometry.lineStringCoordinates {
-            editingState.modifiedCoordinates = lineStringCoords
+        // Store initial coordinates for editing
+        switch layer.feature.geometry?.type {
+        case .lineString:
+            editingState.modifiedCoordinates = layer.feature.geometry?.lineStringCoordinates
+        case .polygon:
+            editingState.modifiedCoordinates = layer.feature.geometry?.polygonCoordinates?.first
+        default:
+            break
         }
         
-        // Animation section remains the same
+        // Animation remains the same
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
             isPointAnimating = true
         }
@@ -289,6 +293,7 @@ struct FeaturePointsView: View {
             isPointAnimating = false
         }
     }
+
 }
 
 struct PointRowView: View {
